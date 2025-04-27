@@ -1,5 +1,7 @@
 Run `pyenv local 3.11.5` (or another 3.11.x)
+
 Run `poetry env use 3.11.5` (or another 3.11.x)
+
 Run `poetry install`
 
 RULES
