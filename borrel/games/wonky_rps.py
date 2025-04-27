@@ -34,7 +34,7 @@ def get_wonkfactor():
         wonkfactor = base_wonkfactor * turbowonk_factor
         wonk_level = "turbowonk"
 
-    elif np.random.rand() < hyperwonk_chance:
+    if np.random.rand() < hyperwonk_chance:
         wonkfactor = base_wonkfactor * hyperwonk_factor
         wonk_level = "hyperwonk"
 
