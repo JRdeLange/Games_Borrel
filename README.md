@@ -1,3 +1,5 @@
+INSTALLATION INSTRUCTIONS
+
 Run `pyenv local 3.11.5` (or another 3.11.x)
 
 Run `poetry env use 3.11.5` (or another 3.11.x)
@@ -20,6 +22,6 @@ TIPS
 
 - I expect time to be quite limited, so divide your time wisely between the games.
 - You can store persistent-between-turns data in your class.
-- `testing.ipynb` is setup to be used during development. It allows you to test your code against a random dummy player, as well as against other real players once they have pushed their policies.
-- After the first round you can pull and run `play.ipynb` to see how your code performs against the other players policies from the previous round.
+- `testing.ipynb` is set up to be used during development. It allows you to test your code against a random dummy player, as well as against other real players once they have pushed their policies.
+- After the first round you can pull and run `play.ipynb` to see how your code performs against the other players' policies from the previous round.
 - Ask me if you have any questions!
