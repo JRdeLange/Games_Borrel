@@ -177,7 +177,7 @@ class Ivo:
         - opponent: the choice of your opponent in this round ("r", "p", or "s")
         - you_score: Your score after this round (int)
         - opponent_score: the score of your opponent after this round (int)
-        - wonk_level: the wonk level of this round ("wonk", "turbowonk", "hyperwonk")
+        - wonk_level: the wonk level of this round ("wonk", "turbowonk", "hyperwonk", "golden wonk", "golden turbowonk", "golden hyperwonk")
         - wonky_hand: the wonky hand of this round ("r", "p", or "s")
         - wonkfactor: the wonk factor of this round (float)
         - rounds_remaining: the number of rounds remaining in the game (int)
