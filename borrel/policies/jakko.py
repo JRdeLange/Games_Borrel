@@ -30,11 +30,14 @@ class Jakko:
         4      A      B      B               0.0
 
         These are dummy names and will be e.g. "ivo" "do" "carlos" in the scoring round.
+        I advise you to deal with these names dynamically, as they are not guaranteed to all be present.
 
         The score in the example above would be:
-        {'dummy1': 2, 'dummy2': 0, 'dummy3': 1}
+        {'dummy1': 1, 'dummy2': 2, 'dummy3': 1}
 
         Write a function that returns "A" or "B" based on the current state of the game.
+
+        A full game is always 100 rounds.
 
         Good luck with this game of social deduction!
         """
@@ -44,17 +47,15 @@ class Jakko:
         """
         This game is inspired by the lightcycles in the movie Tron.
         These lightcycle bikes leave a wall behind them as they move, which kills you if you run into them.
-        This implementation is grid-based; think multiplayer snake with tails that do not disappear.
+        This implementation is grid-based; think multiplayer snake without food and tails that do not disappear.
 
         You receive a grid representing the current state of the game.
         This grid is a 2D array of characters, with the following characters:
         - " " represents an empty cell
-
         - "o" represents walls created by you
         - ">" or "<" or "^" or "v" represents your bike, depending on the direction you are going
-
-        - "X" represents walls created by the opponent
-        - "x" represents the opponent's bike
+        - "x" represents walls created by the opponent
+        - "X" represents the opponent's bike
 
         Example input:
 
@@ -77,6 +78,8 @@ class Jakko:
 
         Write a function that returns "up", "down", "left", or "right" based on the current state of the game.
         If you return the opposite of the direction you are currently going, nothing will happen.
+
+        The grid size and is always the same between games (7x7)
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
@@ -111,6 +114,17 @@ class Jakko:
 
         Make sure the configuration is valid! Otherwise it is an instant loss :)
 
+        The input here is always identical between games:
+
+        boat_template:
+           length position direction
+        0       2   [0, 0]     right
+        1       2   [1, 0]     right
+        2       3   [2, 0]     right
+        3       5   [3, 0]     right
+
+        grid size is always 6x6
+
         Good luck with this age-old classic!
         """
         return boat_template
@@ -129,6 +143,8 @@ class Jakko:
         Write a function that returns a list of 2 integers representing the position to shoot at.
 
         I do not think you really need your own grid, but here it is if you want to do anything with it :)
+
+        The grid size is always the same between games (6x6)
 
         Good luck with this age-old classic!
         """
@@ -183,6 +199,8 @@ class Jakko:
         - rounds_remaining: the number of rounds remaining in the game (int)
 
         Write a function that returns "r", "p", or "s" based on the current state of the game.
+
+        A full game is always 200 turns.
 
         Good luck with this fun game of risk management!
         """
