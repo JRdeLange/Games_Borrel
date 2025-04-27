@@ -77,7 +77,7 @@ class Dummy:
         - If you both die at the same time, it is a tie.
 
         Write a function that returns "up", "down", "left", or "right" based on the current state of the game.
-        If you return the opposite of the direction you are currently going, nothing will happen.
+        If you return the opposite of the direction you are currently going, you will keep going in the direction you currently are.
 
         The grid size and is always the same between games (7x7)
 
@@ -162,7 +162,7 @@ class Dummy:
             "golden turbowonk",
             "golden hyperwonk",
         ],
-        wonky_hand: str,
+        wonky_hand: Literal["r", "p", "s"],
         history: pd.DataFrame,
     ) -> Literal["r", "p", "s"]:
         """
