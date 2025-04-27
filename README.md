@@ -10,6 +10,7 @@ RULES
 - Cheating by walking over to another player and looking at their code is free game
 - You are only allowed to push your own `name`.py
 - You are not allowed to create any new files from within your `name`.py
+- You are not allowed to store any information outside of your `name` class
 - You are respectfully asked to keep the execution time of the benchmark cells in `testing.ipynb` under 30 seconds
 - You are free to look at all code here. That means both the games and, once pushed, other players code (once pushed)
 - If your code crashes or causes a crash due to invalid output, I will throw you out of that specific game, so no points that that round for that game
