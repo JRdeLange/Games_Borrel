@@ -1,3 +1,5 @@
+import random
+from collections import deque
 from typing import Literal
 
 import numpy as np
@@ -44,7 +46,11 @@ class Ivo:
         Good luck with this game of social deduction!
         """
 
-        strategy = "win-stay-lose-shift"  # or "random", or "win-shift-lose-stay"
+        if len(history) == 0:
+            # if this is the first round, return a random choice
+            return str(np.random.choice(["A", "B"]))
+
+        strategy = "ε-greedy"  # or "random", or "win-shift-lose-stay"
         if strategy == "win-stay-lose-shift":
             my_choice = history[self.name].iloc[-1]
             if self.detect_minority_win(history):
@@ -63,8 +69,37 @@ class Ivo:
             # if I won, I will stay with my choice
             return str(np.random.choice(["A", "B"]))
 
+        elif strategy == "ε-greedy":
+            ε = 0.1
+            # 1) pure exploration
+            if len(history) == 0 or np.random.rand() < ε:
+                return np.random.choice(["A", "B"])
+            # 2) exploitation: Win-Stay-Lose-Shift
+            last = history[self.name].iloc[-1]
+            # did you actually “win” on that last choice?
+            # minority = the choice with fewer players in the last row
+            counts = history.iloc[-1].value_counts()
+            minority_choice = "A" if counts.get("A",0) < counts.get("B",0) else "B"
+            won_last = (last == minority_choice)
+            if won_last:
+                return last
+            else:
+                return "A" if last == "B" else "B"
+
+
         print("ERROR: Unknown strategy. Please tell Ivo he has a bug.")
         return str(np.random.choice(["A", "B"]))
+
+    def get_other_move(self, move):
+        """
+        Returns the move of the other player.
+        """
+        if move == "A":
+            return "B"
+        elif move == "B":
+            return "A"
+        else:
+            raise ValueError("Invalid move")
 
     def detect_minority_win(self, history: pd.DataFrame) -> bool:
         # grab the last row of the history dataframe
@@ -126,13 +161,81 @@ class Ivo:
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
 
-        for move in ["up", "down", "left", "right"]:
-            if self.tron_check_valid_move(grid, move):
-                # if the move is valid, return it
-                return move
+        # Thanks Carlos :)
+
+        self.tron_grid = grid
+        self.tron_height = len(grid)
+        self.tron_width = len(grid[0])
+
+        self.tron_dirs = {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
+        }
+
+        dir_symbols = {">": "right", "<": "left", "^": "up", "v": "down"}
+
+        for r in range(self.tron_height):
+            for c in range(self.tron_width):
+                ch = grid[r][c]
+                if ch in dir_symbols:
+                    self_pos = (r, c)
+                    self_dir = dir_symbols[ch]
+
+        legal_moves = []
+        for move, (dr, dc) in self.tron_dirs.items():
+            nr, nc = self_pos[0] + dr, self_pos[1] + dc
+            if self._tron_is_safe(nr, nc):
+                legal_moves.append(move)
+
+        if not legal_moves:
+            return self_dir
+
+        best_move = max(
+            legal_moves,
+            key=lambda move: self._tron_flood_fill_area(
+                self_pos[0] + self.tron_dirs[move][0],
+                self_pos[1] + self.tron_dirs[move][1]
+            )
+        )
+
+        return best_move
+
+
+        # for move in ["up", "down", "left", "right"]:
+        #     if self.tron_check_valid_move(grid, move):
+        #         # if the move is valid, return it
+        #         return move
         # if no valid move is found, return a random move
 
         # return str(np.random.choice(["up", "down", "left", "right"]))
+
+    def _tron_is_safe(self, r: int, c: int) -> bool:
+        if not (0 <= r < self.tron_height and 0 <= c < self.tron_width):
+            return False
+        return self.tron_grid[r][c] == " "
+
+    def _tron_flood_fill_area(self, r: int, c: int) -> int:
+        if not self._tron_is_safe(r, c):
+            return 0
+
+        visited = set()
+        queue = deque([(r, c)])
+        visited.add((r, c))
+        area = 0
+
+        while queue:
+            cr, cc = queue.popleft()
+            area += 1
+            for dr, dc in self.tron_dirs.values():
+                nr, nc = cr + dr, cc + dc
+                if (nr, nc) not in visited and self._tron_is_safe(nr, nc):
+                    visited.add((nr, nc))
+                    queue.append((nr, nc))
+
+        return area
+
 
     def tron_check_valid_move(
         self, grid: np.ndarray, move: Literal["up", "down", "left", "right"]
@@ -207,20 +310,45 @@ class Ivo:
 
         Good luck with this age-old classic!
         """
+        placement = boat_template.copy(deep=True)
+        # occupancy map
+        occupied = [[False]*grid_size for _ in range(grid_size)]
+        directions = ["up", "down", "left", "right"]
 
-        for boat_idx in range(len(boat_template)):
-            length = boat_template.loc[boat_idx, "length"]
-            x, y = np.random.randint(0, grid_size), np.random.randint(0, grid_size)
-            direction = np.random.choice(["up", "down", "left", "right"])
-            while not self.is_battleship_valid_placement(
-                length, (x, y), direction, grid_size
-            ):
-                x, y = np.random.randint(0, grid_size), np.random.randint(0, grid_size)
-                direction = np.random.choice(["up", "down", "left", "right"])
-            boat_template.loc[boat_idx, "position"] = [x, y]
-            boat_template.loc[boat_idx, "direction"] = direction
+        for idx, row in placement.iterrows():
+            length = int(row["length"])
+            while True:
+                dir_ = random.choice(directions)
+                # pick a random start so that boat of length L in dir_ stays on the board
+                if dir_ == "up":
+                    x = random.randint(length - 1, grid_size - 1)
+                    y = random.randint(0, grid_size - 1)
+                    coords = [(x - i, y) for i in range(length)]
+                elif dir_ == "down":
+                    x = random.randint(0, grid_size - length)
+                    y = random.randint(0, grid_size - 1)
+                    coords = [(x + i, y) for i in range(length)]
+                elif dir_ == "left":
+                    x = random.randint(0, grid_size - 1)
+                    y = random.randint(length - 1, grid_size - 1)
+                    coords = [(x, y - i) for i in range(length)]
+                else:  # right
+                    x = random.randint(0, grid_size - 1)
+                    y = random.randint(0, grid_size - length)
+                    coords = [(x, y + i) for i in range(length)]
 
-        return boat_template
+                # check for overlaps
+                if all(not occupied[r][c] for r, c in coords):
+                    # mark these cells occupied
+                    for r, c in coords:
+                        occupied[r][c] = True
+
+                    # record the chosen start & direction
+                    placement.at[idx, "position"] = [coords[0][0], coords[0][1]]
+                    placement.at[idx, "direction"] = dir_
+                    break
+
+        return placement
 
     def is_battleship_valid_placement(
         self, length, position, direction, grid_size: int
@@ -280,11 +408,91 @@ class Ivo:
 
         Good luck with this age-old classic!
         """
-        x = np.random.choices(range(7), weights=[1, 2, 3, 4, 3, 2, 1])[0]
-        y = np.random.choices(range(7), weights=[1, 2, 3, 4, 3, 2, 1])[0]
-        # x = np.random.choice(range(grid_size), [])
-        # y = np.random.randint(0, grid_size)
-        return [x, y]
+
+            # If there is a hit, shoot around that hit
+        def get_clusters(hits):
+            clusters, seen = [], set()
+            for h in hits:
+                if h in seen:
+                    continue
+                queue = [h]
+                seen.add(h)
+                cluster = []
+                while queue:
+                    x, y = queue.pop()
+                    cluster.append((x, y))
+                    for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
+                        nx, ny = x+dx, y+dy
+                        if (nx, ny) in hits and (nx, ny) not in seen:
+                            seen.add((nx, ny))
+                            queue.append((nx, ny))
+                clusters.append(cluster)
+            return clusters
+
+        # --- helper to find all empty neighbors, extending hits along orientation ---
+        def get_adjacent(cluster):
+            candidates = set()
+            if len(cluster) > 1:
+                xs = [x for x, _ in cluster]
+                ys = [y for _, y in cluster]
+                if len(set(xs)) == 1:
+                    # horizontal
+                    r = xs[0]
+                    for c in (min(ys)-1, max(ys)+1):
+                        if 0 <= c < grid_size and opponent_fleet[r, c] == " ":
+                            candidates.add((r, c))
+                else:
+                    # vertical
+                    c = ys[0]
+                    for r in (min(xs)-1, max(xs)+1):
+                        if 0 <= r < grid_size and opponent_fleet[r, c] == " ":
+                            candidates.add((r, c))
+            else:
+                # single hit: all four directions
+                x, y = cluster[0]
+                for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
+                    nx, ny = x+dx, y+dy
+                    if 0 <= nx < grid_size and 0 <= ny < grid_size and opponent_fleet[nx, ny] == " ":
+                        candidates.add((nx, ny))
+            return list(candidates)
+
+        # --- 1) reconstruct remaining ship lengths ---
+        remaining = [2, 2, 3, 5]
+        hits = list(zip(*np.where(opponent_fleet == "X")))
+        clusters = get_clusters(hits)
+
+        # any cluster whose length matches a ship AND has no blank extension is assumed sunk
+        for cl in clusters:
+            L = len(cl)
+            if L in remaining:
+                # check if it can still extend
+                if not get_adjacent(cl):
+                    remaining.remove(L)
+
+        # --- 2) target mode: finish off any live cluster ---
+        for cl in clusters:
+            # only clusters with at least one adjacent blank are still “live”
+            adj = get_adjacent(cl)
+            if adj:
+                # deterministic choice: smallest (row,col)
+                x, y = sorted(adj)[0]
+                return [x, y]
+
+        # --- 3) hunt mode: simple parity scan ---
+        for i in range(grid_size):
+            for j in range(grid_size):
+                if (i + j) % 2 == 0 and opponent_fleet[i, j] == " ":
+                    return [i, j]
+
+        # --- 4) fallback: first empty cell ---
+        for i in range(grid_size):
+            for j in range(grid_size):
+                if opponent_fleet[i, j] == " ":
+                    return [i, j]
+
+        # no moves left
+        return [0, 0]
+
 
     def wonky_rps(
         self,
