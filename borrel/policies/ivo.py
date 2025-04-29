@@ -43,7 +43,47 @@ class Ivo:
 
         Good luck with this game of social deduction!
         """
+
+        strategy = "win-stay-lose-shift"  # or "random", or "win-shift-lose-stay"
+        if strategy == "win-stay-lose-shift":
+            my_choice = history[self.name].iloc[-1]
+            if self.detect_minority_win(history):
+                # if I won, I will stay with my choice
+                return my_choice
+            else:
+                return "A" if my_choice == "B" else "B"
+        elif strategy == "win-shift-lose-stay":
+            my_choice = history[self.name].iloc[-1]
+            if self.detect_minority_win(history):
+                # if I won, I will shift my choice
+                return "A" if my_choice == "B" else "B"
+            else:
+                return my_choice
+        elif strategy == "random":
+            # if I won, I will stay with my choice
+            return str(np.random.choice(["A", "B"]))
+
+        print("ERROR: Unknown strategy. Please tell Ivo he has a bug.")
         return str(np.random.choice(["A", "B"]))
+
+    def detect_minority_win(self, history: pd.DataFrame) -> bool:
+        # grab the last row of the history dataframe
+        last_row = history.iloc[-1]
+        # get the number of players who chose A and B
+        num_A = (last_row == "A").sum()
+        num_B = (last_row == "B").sum()
+        if num_A == 0 or num_B == 0:
+            return False
+        # check if the player won
+        if num_A < num_B:
+            winner = "A"
+        else:
+            winner = "B"
+        # check if the player is in the minority
+        if last_row[self.name] == winner:
+            return True
+        else:
+            return False
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
@@ -85,7 +125,45 @@ class Ivo:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
-        return str(np.random.choice(["up", "down", "left", "right"]))
+
+        for move in ["up", "down", "left", "right"]:
+            if self.tron_check_valid_move(grid, move):
+                # if the move is valid, return it
+                return move
+        # if no valid move is found, return a random move
+
+        # return str(np.random.choice(["up", "down", "left", "right"]))
+
+    def tron_check_valid_move(
+        self, grid: np.ndarray, move: Literal["up", "down", "left", "right"]
+    ) -> bool:
+        """
+        Check if the move is valid.
+        A move is valid if it does not hit a wall or a bike, and does not leave the grid.
+        """
+        # get the current position of the bike
+        bike_pos = np.argwhere(grid == "X")[0]
+        # get the new position of the bike
+        if move == "up":
+            new_pos = (bike_pos[0] - 1, bike_pos[1])
+        elif move == "down":
+            new_pos = (bike_pos[0] + 1, bike_pos[1])
+        elif move == "left":
+            new_pos = (bike_pos[0], bike_pos[1] - 1)
+        elif move == "right":
+            new_pos = (bike_pos[0], bike_pos[1] + 1)
+        else:
+            raise ValueError("Invalid move")
+        # check if the new position is valid
+        if (
+            new_pos[0] < 0
+            or new_pos[0] >= grid.shape[0]
+            or new_pos[1] < 0
+            or new_pos[1] >= grid.shape[1]
+            or grid[new_pos] in ["o", "x", "X"]
+        ):
+            return False
+        return True
 
     def battleship_place_boats(
         self, boat_template: pd.DataFrame, grid_size: int
@@ -129,7 +207,39 @@ class Ivo:
 
         Good luck with this age-old classic!
         """
+
+        for boat_idx in range(len(boat_template)):
+            length = boat_template.loc[boat_idx, "length"]
+            x, y = np.random.randint(0, grid_size), np.random.randint(0, grid_size)
+            direction = np.random.choice(["up", "down", "left", "right"])
+            while not self.is_battleship_valid_placement(
+                length, (x, y), direction, grid_size
+            ):
+                x, y = np.random.randint(0, grid_size), np.random.randint(0, grid_size)
+                direction = np.random.choice(["up", "down", "left", "right"])
+            boat_template.loc[boat_idx, "position"] = [x, y]
+            boat_template.loc[boat_idx, "direction"] = direction
+
         return boat_template
+
+    def is_battleship_valid_placement(
+        self, length, position, direction, grid_size: int
+    ) -> pd.DataFrame:
+        # check if the boat fits in the grid
+        if direction == "up":
+            if position[0] - length < 0:
+                return False
+        elif direction == "down":
+            if position[0] + length >= grid_size:
+                return False
+        elif direction == "left":
+            if position[1] - length < 0:
+                return False
+        elif direction == "right":
+            if position[1] + length >= grid_size:
+                return False
+        else:
+            raise ValueError("Invalid direction")
 
     def battleship_turn(
         self, own_fleet: np.ndarray, opponent_fleet: np.ndarray, grid_size: int
@@ -170,8 +280,10 @@ class Ivo:
 
         Good luck with this age-old classic!
         """
-        x = np.random.randint(0, grid_size)
-        y = np.random.randint(0, grid_size)
+        x = np.random.choices(range(7), weights=[1, 2, 3, 4, 3, 2, 1])[0]
+        y = np.random.choices(range(7), weights=[1, 2, 3, 4, 3, 2, 1])[0]
+        # x = np.random.choice(range(grid_size), [])
+        # y = np.random.randint(0, grid_size)
         return [x, y]
 
     def wonky_rps(
@@ -237,4 +349,26 @@ class Ivo:
 
         Good luck with this fun game of risk management!
         """
-        return str(np.random.choice(["r", "p", "s"]))
+
+        golden_round = wonk_level.startswith("golden")
+        if golden_round:
+            return wonky_hand
+        elif wonk_level == "wonk":
+            return self.rps_get_winner(wonky_hand)
+        else:
+            return str(np.random.choice(["r", "p", "s"]))
+
+        # return str(np.random.choice(["r", "p", "s"]))
+
+    def rps_get_winner(self, hand: Literal["r", "p", "s"]) -> Literal["r", "p", "s"]:
+        """
+        Returns the winning hand of the given hand.
+        """
+        if hand == "r":
+            return "p"
+        elif hand == "p":
+            return "s"
+        elif hand == "s":
+            return "r"
+        else:
+            raise ValueError("Invalid hand")
