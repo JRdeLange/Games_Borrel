@@ -85,6 +85,7 @@ class Do:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
+        
         return str(np.random.choice(["up", "down", "left", "right"]))
 
     def battleship_place_boats(
@@ -129,6 +130,63 @@ class Do:
 
         Good luck with this age-old classic!
         """
+        boat_template_changed = boat_template.copy()
+        occupied = set()
+        
+        # Helper to check if a position is valid
+        def is_valid(pos, length, direction):
+            dx, dy = 0, 0
+            if direction == "right":
+                dx = 1
+            elif direction == "left":
+                dx = -1
+            elif direction == "down":
+                dy = 1
+            elif direction == "up":
+                dy = -1
+
+            x, y = pos
+            positions = []
+
+            for _ in range(length):
+                if not (0 <= x < 6 and 0 <= y < 6):
+                    return False, []
+                if (x, y) in occupied:
+                    return False, []
+                positions.append((x, y))
+                x += dx
+                y += dy
+
+            return True, positions
+        
+        # Try placing each boat
+        directions = ["right", "down", "left", "up"]
+        i = 0
+        for idx, row in boat_template_changed.iterrows():
+            length = row["length"]
+            placed = False
+            for y in range(6):
+                for x in range(6):
+                    for direction in directions:
+                        valid, pos_list = is_valid((x, y), length, direction)
+                        if valid:
+                            boat_template_changed.at[idx, "position"] = [x, y]
+                            boat_template_changed.at[idx, "direction"] = direction
+                            occupied.update(pos_list)
+                            placed = True
+                            break
+                    if placed:
+                        break
+                if placed:
+                    break
+            if not placed:
+                # If we can't place the boat, we can just return the original template
+                boat_template_changed = boat_template.copy()
+                break
+        
+
+        
+        
         return boat_template
 
     def battleship_turn(

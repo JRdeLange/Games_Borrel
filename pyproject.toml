@@ -6,7 +6,7 @@ authors = ["JRdeLange <jordy.de.lange@planet.nl>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "~3.11"
+python = "~3.10"
 numpy = "2.2.5"
 pandas = "2.2.3"
 scipy = "1.15.2"
