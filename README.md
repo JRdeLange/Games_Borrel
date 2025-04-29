@@ -1,3 +1,13 @@
+WHAT THE EVEN?
+
+Hi! This is my agent/policy programming borrel where you will fight to the death, with your code as your champion!
+
+You will have until 16:00 to push your code. At that point I will run `round1.ipynb` to obtain the first round of points.
+
+Next, you will have until 18:00 to push your code. At that point I will run `round2.ipynb` to obtain the second round of points, which counts double.
+
+You should implement the functions in `borrel/policies/name.py` (where `name` is your name) to be able to play the games.
+
 INSTALLATION INSTRUCTIONS
 
 Run `pyenv install 3.11.5` (or another 3.11.x)
@@ -16,7 +26,7 @@ RULES
 - You are not allowed to create any new files from within your `name`.py.
 - You are not allowed to store any information outside of your `name` class.
 - You are respectfully asked to keep the execution time of the benchmark cells in `testing.ipynb` under 45 seconds to facilitate timely scoring.
-- You are free to look at all code here. That means both the games and, once pushed, policies of other players.
+- You are free to look at all code here. That means both the games and, once pushed by them and pulled by you, policies of other players.
 - If your code crashes or causes a crash due to invalid output, I will throw you out of that specific game, so no points that that round for that game.
 - Keep yourself to the libraries available (most relevant are numpy, pandas, scipy and matplotlib (for some visualization during development)).
 

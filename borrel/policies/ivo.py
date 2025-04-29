@@ -7,7 +7,9 @@ import pandas as pd
 class Ivo:
 
     def __init__(self, name: str = "ivo"):
-        self.name = name
+        # NOTE: DO NOT TOUCH!
+        self.name = name  # NOTE: DO NOT TOUCH!
+        # NOTE: DO NOT TOUCH!
 
         # Feel free to store whatever you want here.
         # Each full run of a game will use a fresh instance of this class.
@@ -77,7 +79,7 @@ class Ivo:
         - If you both die at the same time, it is a tie.
 
         Write a function that returns "up", "down", "left", or "right" based on the current state of the game.
-        If you return the opposite of the direction you are currently going, nothing will happen.
+        If you return the opposite of the direction you are currently going, you will keep going in the direction you currently are.
 
         The grid size and is always the same between games (7x7)
 
@@ -130,19 +132,39 @@ class Ivo:
         return boat_template
 
     def battleship_turn(
-        self, own_grid: np.ndarray, opponent_grid: np.ndarray, grid_size: int
+        self, own_fleet: np.ndarray, opponent_fleet: np.ndarray, grid_size: int
     ) -> list[int, int]:
         """
-        Receives 2 grids, your own grid and the grid of the opponent.
+        Receives 2 grids (2d numpy arrays), representing your own fleet and the fleet of the opponent.
         On each grid, the following characters are present:
         - " " represents an empty cell
-        - "S" represents a ship (only visible on your own grid)
+        - "S" represents a ship (only visible on your own fleet, hidden on opponent fleet)
         - "X" represents a hit
         - "o" represents a miss
 
         Write a function that returns a list of 2 integers representing the position to shoot at.
 
-        I do not think you really need your own grid, but here it is if you want to do anything with it :)
+        Example turn (with full visibility)
+        do shot at 4, 1
+        dummy shot at 2, 2
+        do's fleet:
+        + + + + + + + +
+        + S S         +
+        + S S         +
+        + S S X       +
+        + S S S S S   +
+        +             +
+        +             +
+        + + + + + + + +
+        dummy's fleet:
+        + + + + + + + +
+        + S S         +
+        + S S         +
+        + S S S       +
+        + S S S S S   +
+        +   o         +
+        +             +
+        + + + + + + + +
 
         The grid size is always the same between games (6x6)
 
@@ -162,7 +184,7 @@ class Ivo:
             "golden turbowonk",
             "golden hyperwonk",
         ],
-        wonky_hand: str,
+        wonky_hand: Literal["r", "p", "s"],
         history: pd.DataFrame,
     ) -> Literal["r", "p", "s"]:
         """
@@ -180,27 +202,38 @@ class Ivo:
         If you win with the wonky hand, your points are multiplied by an unknown "wonkfactor".
         A hand can be:
         - wonk level "wonk": Points are multiplied by a random wonkfactor between -1 and 2
-        - wonk level "turbowonk" (10% chance): Points are multiplied by a random wonkfactor between -10 and 20
-        - wonk level "hyperwonk" (1% chance): Points are multiplied by a random wonkfactor between -50 and 100
+        - wonk level "turbowonk" (~25% chance): Points are multiplied by a random wonkfactor between -10 and 20
+        - wonk level "hyperwonk" (~5% chance): Points are multiplied by a random wonkfactor between -50 and 100
 
-        Finally there is a 10% chance the wonk level is "golden".
+        Finally there is a 20% chance the wonk level is "golden".
         In this case, the wonkfactor is the absolute of what it would have been - so always positive!.
 
         Each round you also get the complete history of the current game in a pandas dataframe.
         It has a row for each played round.
         It has the following columns:
-        - you: Your choice in this round ("r", "p", or "s")
-        - opponent: the choice of your opponent in this round ("r", "p", or "s")
-        - you_score: Your score after this round (int)
-        - opponent_score: the score of your opponent after this round (int)
+        - `your name`: Your choice in this round ("r", "p", or "s")
+        - `opponents name`: the choice of your opponent in this round ("r", "p", or "s")
+        - `your name`_score: Your score after this round (int)
+        - `opponents name`_score: the score of your opponent after this round (int)
         - wonk_level: the wonk level of this round ("wonk", "turbowonk", "hyperwonk", "golden wonk", "golden turbowonk", "golden hyperwonk")
         - wonky_hand: the wonky hand of this round ("r", "p", or "s")
         - wonkfactor: the wonk factor of this round (float)
         - rounds_remaining: the number of rounds remaining in the game (int)
 
+        Note that `your name` and `opponents name` are the names of the players in the game and they and their order can change from game to game.
+
+        Example:
+
+          do dummy do_score dummy_score   wonk_level wonky_hand  wonkfactor rounds_remaining
+        0  p     r      100           0    hyperwonk          s  -21.798346                4
+        1  p     p      100           0  golden wonk          r    0.527926                3
+        2  s     s      100           0         wonk          s    0.839399                2
+        3  r     p      100        -700    turbowonk          p   -7.004510                1
+        4  r     p      100        -600    hyperwonk          s   -6.366723                0
+
         Write a function that returns "r", "p", or "s" based on the current state of the game.
 
-        A full game is always 200 turns.
+        A full game is always 400 turns.
 
         Good luck with this fun game of risk management!
         """
