@@ -2,6 +2,7 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+import random
 
 
 class Mark1:
@@ -85,7 +86,50 @@ class Mark1:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
-        return str(np.random.choice(["up", "down", "left", "right"]))
+        RIGHT = np.array([0, 1])
+        LEFT = np.array([0, -1])
+        UP = np.array([-1, 0])
+        DOWN = np.array([1, 0])
+
+        DIRDICT = {
+            "up": UP,
+            "down": DOWN,
+            "left": LEFT,
+            "right": RIGHT,
+        }
+
+        walls = grid != " "
+        current_position = np.where(np.isin(grid, [">", "<", "^", "v"]))
+        current_position = np.array(current_position).reshape(-1)
+        assert len(current_position) == 2
+
+        valid_choices = set()
+        for dir_name, dir_value in DIRDICT.items():
+            try:
+                if not walls[*(current_position + dir_value)]:
+                    valid_choices.add(dir_name)
+            except:
+                pass
+
+        if current_position[0] == 0:
+            valid_choices -= {"up"}
+        if current_position[0] == 6:
+            valid_choices -= {"down"}
+        if current_position[1] == 0:
+            valid_choices -= {"left"}
+        if current_position[1] == 6:
+            valid_choices -= {"right"}
+
+        if "down" in valid_choices:
+            return "down"
+        if "up" in valid_choices:
+            return "up"
+
+        if len(valid_choices) == 0:
+            return "up"
+
+        return str(np.random.choice(list(valid_choices)))
+
 
     def battleship_place_boats(
         self, boat_template: pd.DataFrame, grid_size: int
@@ -129,7 +173,16 @@ class Mark1:
 
         Good luck with this age-old classic!
         """
-        return boat_template
+        self.turn = 0
+        self.boat_template = boat_template
+        return pd.DataFrame(
+            {
+                "length": [2, 2, 3, 5],
+                "position": [[0, 1], [1, 2], [2, 0], [0, 4]],
+                "direction": ["down", "down", "right", "down"],
+            }
+        )
+
 
     def battleship_turn(
         self, own_fleet: np.ndarray, opponent_fleet: np.ndarray, grid_size: int
@@ -170,9 +223,15 @@ class Mark1:
 
         Good luck with this age-old classic!
         """
-        x = np.random.randint(0, grid_size)
-        y = np.random.randint(0, grid_size)
-        return [x, y]
+        try:
+            self.turn += 1
+            return self.boat_template["position"].iloc[self.turn - 1]
+        except:
+            pass
+
+        indices = list(zip(*np.where(opponent_fleet == " ")))
+        i = np.random.randint(0, len(indices))
+        return [int(j) for j in (indices[i])]
 
     def wonky_rps(
         self,
