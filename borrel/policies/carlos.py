@@ -453,7 +453,7 @@ class Carlos:
         my_score = history[f"{me}_score"].iloc[-1]
         opp_score = history[f"{opponent}_score"].iloc[-1]
         score_diff = my_score - opp_score
-        risk_aversion = 0.1 + 0.001 * score_diff
+        risk_aversion = 0.15 + 0.0001 * score_diff
 
         opp_moves = history[opponent].dropna()
         freq = opp_moves.value_counts(normalize=True).to_dict()
@@ -462,7 +462,7 @@ class Carlos:
         beats = {"r": "s", "p": "r", "s": "p"}
 
         relevant_rows = history[history["wonk_level"] == wonk_level]
-        if len(relevant_rows) >= 5:
+        if len(relevant_rows) >= 3:
             wonk_mean = relevant_rows["wonkfactor"].mean()
             wonk_std = relevant_rows["wonkfactor"].std()
         else:
