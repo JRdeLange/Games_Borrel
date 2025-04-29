@@ -14,6 +14,15 @@ class Ivo:
         self.name = name  # NOTE: DO NOT TOUCH!
         # NOTE: DO NOT TOUCH!
 
+
+        self.wonk_profiles = {
+            "wonk": (0.5, 1.0),
+            "turbowonk": (2.5, 10.0),
+            "hyperwonk": (5.0, 30.0),
+            "golden wonk": (0.5, 0.0),
+            "golden turbowonk": (2.5, 0.0),
+            "golden hyperwonk": (5.0, 0.0),
+        }
         # Feel free to store whatever you want here.
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
@@ -71,7 +80,7 @@ class Ivo:
             return str(np.random.choice(["A", "B"]))
 
         elif strategy == "ε-greedy":
-            ε = 0.1
+            ε = 0.0
             # 1) pure exploration
             if len(history) == 0 or np.random.rand() < ε:
                 return np.random.choice(["A", "B"])
@@ -83,9 +92,9 @@ class Ivo:
             minority_choice = "A" if counts.get("A",0) < counts.get("B",0) else "B"
             won_last = (last == minority_choice)
             if won_last:
-                return last
+                return self.get_other_move(last)
             else:
-                return "A" if last == "B" else "B"
+                return last
 
 
         print("ERROR: Unknown strategy. Please tell Ivo he has a bug.")
@@ -193,6 +202,14 @@ class Ivo:
         if not legal_moves:
             return self_dir
 
+        # best_move = max(
+        #     legal_moves,
+        #     key=lambda move: self._tron_flood_fill_area(
+        #         self_pos[0] + self.tron_dirs[move][0],
+        #         self_pos[1] + self.tron_dirs[move][1]
+        #     )
+        # )
+
         best_move = max(
             legal_moves,
             key=lambda move: self._tron_flood_fill_area(
@@ -200,6 +217,7 @@ class Ivo:
                 self_pos[1] + self.tron_dirs[move][1]
             )
         )
+        # tactics_move, execute_tactics = self._tron_tactics()
 
         return best_move
 
@@ -211,6 +229,9 @@ class Ivo:
         # if no valid move is found, return a random move
 
         # return str(np.random.choice(["up", "down", "left", "right"]))
+
+    def _tron_tactics(self):
+        pass
 
     def _tron_is_safe(self, r: int, c: int) -> bool:
         if not (0 <= r < self.tron_height and 0 <= c < self.tron_width):
@@ -559,15 +580,55 @@ class Ivo:
         Good luck with this fun game of risk management!
         """
 
-        golden_round = wonk_level.startswith("golden")
-        if golden_round:
-            return wonky_hand
-        elif wonk_level == "wonk":
-            return self.rps_get_winner(wonky_hand)
-        else:
-            return str(np.random.choice(["r", "p", "s"]))
+        # golden_round = wonk_level.startswith("golden")
+        # if golden_round:
+        #     return wonky_hand
+        # elif wonk_level == "wonk":
+        #     return self.rps_get_winner(wonky_hand)
+        # else:
+        #     return str(np.random.choice(["r", "p", "s"]))
 
-        # return str(np.random.choice(["r", "p", "s"]))
+        # # return str(np.random.choice(["r", "p", "s"]))
+
+        if history.empty:
+            return np.random.choice(["r", "p", "s"])
+
+        player_cols = [col for col in history.columns if col.endswith("_score")]
+        me = player_cols[0][:-6]
+        opponent = player_cols[1][:-6]
+
+        my_score = history[f"{me}_score"].iloc[-1]
+        opp_score = history[f"{opponent}_score"].iloc[-1]
+        score_diff = my_score - opp_score
+        risk_aversion = 0.1 + 0.001 * score_diff
+
+        opp_moves = history[opponent].dropna()
+        freq = opp_moves.value_counts(normalize=True).to_dict()
+        opp_probs = {k: freq.get(k, 0.0) for k in ["r", "p", "s"]}
+
+        beats = {"r": "s", "p": "r", "s": "p"}
+
+        relevant_rows = history[history["wonk_level"] == wonk_level]
+        if len(relevant_rows) >= 5:
+            wonk_mean = relevant_rows["wonkfactor"].mean()
+            wonk_std = relevant_rows["wonkfactor"].std()
+        else:
+            wonk_mean, wonk_std = self.wonk_profiles.get(wonk_level, (1.0, 0.0))
+
+        def expected_score(move: str) -> float:
+            win_prob = sum(prob for opp, prob in opp_probs.items() if beats[move] == opp)
+            base_win_score = 100
+
+            if move == wonky_hand:
+                score = base_win_score * wonk_mean * win_prob
+                penalty = risk_aversion * (wonk_std * win_prob)
+                return score - penalty
+            else:
+                return base_win_score * win_prob
+
+        return max(["r", "p", "s"], key=expected_score)
+
+
 
     def rps_get_winner(self, hand: Literal["r", "p", "s"]) -> Literal["r", "p", "s"]:
         """
