@@ -191,12 +191,12 @@ class Battleship:
     def play_turn(self):
         # get the shots from both players
         shot1 = self.player1.turn(
-            copy.deepcopy(self.player1.grid),
+            copy.deepcopy(self.player1.grid.grid),
             copy.deepcopy(self.player2.grid.get_masked_grid()),
             self.size,
         )
         shot2 = self.player2.turn(
-            copy.deepcopy(self.player2.grid),
+            copy.deepcopy(self.player2.grid.grid),
             copy.deepcopy(self.player1.grid.get_masked_grid()),
             self.size,
         )
@@ -209,11 +209,11 @@ class Battleship:
         self.player2.grid.shot(shot1)
 
         if self.render:
-            print(f"{self.player1.name} shot at {shot2.x}, {shot2.y}")
-            print(f"{self.player2.name} shot at {shot1.x}, {shot1.y}")
-            print(f"{self.player1.name} grid:")
+            print(f"{self.player1.name} shot at {shot1.x}, {shot1.y}")
+            print(f"{self.player2.name} shot at {shot2.x}, {shot2.y}")
+            print(f"{self.player1.name}'s fleet:")
             self.player1.grid.print_grid()
-            print(f"{self.player2.name} grid:")
+            print(f"{self.player2.name}'s fleet:")
             self.player2.grid.print_grid()
 
         # check for wins

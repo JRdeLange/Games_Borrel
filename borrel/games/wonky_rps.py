@@ -15,13 +15,13 @@ def get_wonkfactor():
     wonk_min = -1
     wonk_max = 2.0
 
-    turbowonk_chance = 0.1
+    turbowonk_chance = 0.25
     turbowonk_factor = 10
 
-    hyperwonk_chance = 0.01
+    hyperwonk_chance = 0.05
     hyperwonk_factor = 50
 
-    golden_wonk_chance = 0.1
+    golden_wonk_chance = 0.2
 
     wonky_hand = np.random.choice([ROCK, PAPER, SCISSORS])
 
@@ -82,19 +82,19 @@ class WonkyRPS:
         else:
             return self.player2
 
-    def get_history_from_perspective(self, perspective, opponent):
-        """
-        Returns a deep copy of the history dataframe, with the perspective of the given player.
-        """
-        perspective_history = copy.deepcopy(self.history)
-        rename_dict = {
-            perspective.name: "you",
-            opponent.name: "opponent",
-            perspective.name + "_score": "you_score",
-            opponent.name + "_score": "opponent_score",
-        }
-        perspective_history.rename(columns=rename_dict, inplace=True)
-        return perspective_history
+    # def get_history_from_perspective(self, perspective, opponent):
+    #     """
+    #     Returns a deep copy of the history dataframe, with the perspective of the given player.
+    #     """
+    #     perspective_history = copy.deepcopy(self.history)
+    #     rename_dict = {
+    #         perspective.name: "you",
+    #         opponent.name: "opponent",
+    #         perspective.name + "_score": "you_score",
+    #         opponent.name + "_score": "opponent_score",
+    #     }
+    #     perspective_history.rename(columns=rename_dict, inplace=True)
+    #     return perspective_history
 
     def play_round(self, rounds_remaining: int):
         wonk = get_wonkfactor()
@@ -108,7 +108,7 @@ class WonkyRPS:
         player1_choice = self.player1.wonky_rps(
             wonk["wonk_level"],
             wonk["wonky_hand"],
-            self.get_history_from_perspective(self.player1, self.player2),
+            copy.deepcopy(self.history),
         )
         if player1_choice not in [ROCK, PAPER, SCISSORS]:
             return self.player2.name
@@ -116,7 +116,7 @@ class WonkyRPS:
         player2_choice = self.player2.wonky_rps(
             wonk["wonk_level"],
             wonk["wonky_hand"],
-            self.get_history_from_perspective(self.player2, self.player1),
+            copy.deepcopy(self.history),
         )
         if player2_choice not in [ROCK, PAPER, SCISSORS]:
             return self.player1.name
@@ -183,7 +183,7 @@ class WonkyRPS:
             ]
         )
 
-    def play_game(self, rounds: int = 200):
+    def play_game(self, rounds: int = 400):
         self.reset()
 
         for i in range(rounds):
