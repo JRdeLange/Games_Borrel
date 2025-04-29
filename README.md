@@ -8,6 +8,8 @@ Next, you will have until 18:00 to push your code. At that point I will run `rou
 
 You should implement the functions in `borrel/policies/name.py` (where `name` is your name) to be able to play the games.
 
+For ease of use you can just push to main, but do make very sure you do not push anything else than your `name.py` file. Otherwise, you get points deducted!
+
 INSTALLATION INSTRUCTIONS
 
 Run `pyenv install 3.11.5` (or another 3.11.x)
