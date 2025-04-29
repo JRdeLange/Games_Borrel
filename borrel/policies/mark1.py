@@ -59,7 +59,7 @@ class Mark1:
         - "x" represents walls created by the opponent
         - "X" represents the opponent's bike
 
-        Example input:
+        Example input (5x5 grid):
 
         +++++++++++++
         +           +
@@ -81,7 +81,7 @@ class Mark1:
         Write a function that returns "up", "down", "left", or "right" based on the current state of the game.
         If you return the opposite of the direction you are currently going, you will keep going in the direction you currently are.
 
-        The grid size and is always the same between games (7x7)
+        The grid size and starting positions are always the same between games (7x7 and [(3, 2), (3, 4)])
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """

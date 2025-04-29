@@ -31,6 +31,7 @@ RULES
 - You are free to look at all code here. That means both the games and, once pushed by them and pulled by you, policies of other players.
 - If your code crashes or causes a crash due to invalid output, I will throw you out of that specific game, so no points that that round for that game.
 - Keep yourself to the libraries available (most relevant are numpy, pandas, scipy and matplotlib (for some visualization during development)).
+- If you discover a significant (up to my judgement) bug, let me know and get a bonus point!
 
 TIPS
 
