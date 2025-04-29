@@ -4,7 +4,9 @@ Hi! This is my agent/policy programming borrel where you will fight to the death
 
 You will have until 16:00 to push your code. At that point I will run `round1.ipynb` to obtain the first round of points.
 
-Next, you will have until 18:00 to push your code. At that point I will run `round2.ipynb` to obtain the second round of points, which counts double.
+Next, you will have until 17:00 to push your code. At that point I will run `round2.ipynb` to obtain the third round of points.
+
+Next, you will have until 18:00 to push your code. At that point I will run `round3.ipynb` to obtain the third round of points, which counts double.
 
 You should implement the functions in `borrel/policies/name.py` (where `name` is your name) to be able to play the games.
 
