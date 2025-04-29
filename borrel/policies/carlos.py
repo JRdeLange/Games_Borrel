@@ -2,6 +2,7 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+from collections import deque
 
 
 class Carlos:
@@ -10,10 +11,56 @@ class Carlos:
         # NOTE: DO NOT TOUCH!
         self.name = name  # NOTE: DO NOT TOUCH!
         # NOTE: DO NOT TOUCH!
-
+        # Namespaced variables for the minority game
+        self.minority_last_round_idx = -1
+        self.minority_players = []
+        self.minority_prev_moves = {}
+        self.minority_losses = {}
+        self.minority_switches = {}
+        self.minority_last_won = {}
         # Feel free to store whatever you want here.
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
+
+    def _minority_update_from_new_round(self, history: pd.DataFrame):
+        current_idx = len(history) - 1
+        if current_idx <= self.minority_last_round_idx:
+            return 
+
+        players = [col for col in history.columns if col != "rounds_remaining"]
+
+        if not self.minority_players:
+            self.minority_players = players
+            for p in players:
+                self.minority_prev_moves[p] = None
+                self.minority_losses[p] = 0
+                self.minority_switches[p] = 0
+                self.minority_last_won[p] = True
+
+        for i in range(self.minority_last_round_idx + 1, current_idx + 1):
+            row = history.iloc[i]
+            choices = row[self.minority_players]
+
+            count_A = (choices == "A").sum()
+            count_B = (choices == "B").sum()
+            if count_A == count_B:
+                minority_choice = None
+            else:
+                minority_choice = "A" if count_A < count_B else "B"
+
+            for player in self.minority_players:
+                move = choices[player]
+                won = (move == minority_choice) if minority_choice else False
+
+                if not self.minority_last_won[player]:
+                    if self.minority_prev_moves[player] is not None and self.minority_prev_moves[player] != move:
+                        self.minority_switches[player] += 1
+                    self.minority_losses[player] += 1
+
+                self.minority_prev_moves[player] = move
+                self.minority_last_won[player] = won
+
+        self.minority_last_round_idx = current_idx
 
     def minority(self, history: pd.DataFrame) -> Literal["A", "B"]:
         """
@@ -43,7 +90,35 @@ class Carlos:
 
         Good luck with this game of social deduction!
         """
-        return str(np.random.choice(["A", "B"]))
+        if history.empty or len(history) < 2:
+            return np.random.choice(["A", "B"])
+
+        self._minority_update_from_new_round(history)
+
+        predictions = []
+        for player in self.minority_players:
+            last_move = self.minority_prev_moves[player]
+            if last_move is None:
+                predictions.append(np.random.choice(["A", "B"]))
+                continue
+
+            if not self.minority_last_won[player]:
+                loss_count = self.minority_losses[player]
+                switch_count = self.minority_switches[player]
+                switch_rate = switch_count / loss_count if loss_count > 0 else 0.5
+                if switch_rate > 0.6:
+                    predicted = "B" if last_move == "A" else "A"
+                else:
+                    predicted = last_move
+            else:
+                predicted = last_move
+
+            predictions.append(predicted)
+
+        count_A = predictions.count("A")
+        count_B = predictions.count("B")
+
+        return "A" if count_A < count_B else "B"
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
@@ -85,7 +160,70 @@ class Carlos:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
-        return str(np.random.choice(["up", "down", "left", "right"]))
+        self.tron_grid = grid
+        self.tron_height = len(grid)
+        self.tron_width = len(grid[0])
+
+        self.tron_dirs = {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
+        }
+
+        dir_symbols = {">": "right", "<": "left", "^": "up", "v": "down"}
+
+        for r in range(self.tron_height):
+            for c in range(self.tron_width):
+                ch = grid[r][c]
+                if ch in dir_symbols:
+                    self_pos = (r, c)
+                    self_dir = dir_symbols[ch]
+
+        legal_moves = []
+        for move, (dr, dc) in self.tron_dirs.items():
+            nr, nc = self_pos[0] + dr, self_pos[1] + dc
+            if self._tron_is_safe(nr, nc):
+                legal_moves.append(move)
+
+        if not legal_moves:
+            return self_dir
+
+        best_move = max(
+            legal_moves,
+            key=lambda move: self._tron_flood_fill_area(
+                self_pos[0] + self.tron_dirs[move][0],
+                self_pos[1] + self.tron_dirs[move][1]
+            )
+        )
+
+        return best_move
+
+    def _tron_is_safe(self, r: int, c: int) -> bool:
+        if not (0 <= r < self.tron_height and 0 <= c < self.tron_width):
+            return False
+        return self.tron_grid[r][c] == " "
+
+    def _tron_flood_fill_area(self, r: int, c: int) -> int:
+        """Flood fill from (r, c) to estimate open space"""
+        if not self._tron_is_safe(r, c):
+            return 0
+
+        visited = set()
+        queue = deque([(r, c)])
+        visited.add((r, c))
+        area = 0
+
+        while queue:
+            cr, cc = queue.popleft()
+            area += 1
+            for dr, dc in self.tron_dirs.values():
+                nr, nc = cr + dr, cc + dc
+                if (nr, nc) not in visited and self._tron_is_safe(nr, nc):
+                    visited.add((nr, nc))
+                    queue.append((nr, nc))
+
+        return area
 
     def battleship_place_boats(
         self, boat_template: pd.DataFrame, grid_size: int
