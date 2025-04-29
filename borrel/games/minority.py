@@ -47,7 +47,9 @@ class Minority:
 
     def reset(self):
         self.scores = {player.name: 0 for player in self.players}
-        self.history = pd.DataFrame(columns=[player.name for player in self.players])
+        self.history = pd.DataFrame(
+            columns=[player.name for player in self.players] + ["rounds_remaining"]
+        )
 
     def get_winner(self):
         max_score = max(self.scores.values())
