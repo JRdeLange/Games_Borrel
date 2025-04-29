@@ -223,8 +223,6 @@ class Mark1:
 
         Good luck with this age-old classic!
         """
-        import math
-
         directions = (
             np.array([0, 1]),
             np.array([0, -1]),
@@ -238,6 +236,7 @@ class Mark1:
         for i, j in np.ndindex(hits.shape):
             old_position = np.array([i, j])
             if hits[*old_position]:
+
                 for d in directions:
                     neighbour = False
                     while True:
@@ -255,9 +254,35 @@ class Mark1:
                         else:
                             break
 
-        indices = list(zip(*np.where(opponent_fleet == " ")))
-        i = np.random.randint(0, len(indices))
-        return [int(j) for j in (indices[i])]
+
+                decent_choice = None
+                for d in directions:
+                    new_position = old_position + d
+
+                    if np.all(np.clip(new_position, 0, 5) == old_position):
+                        continue
+
+                    if opponent_fleet[*new_position] != " ":
+                        break
+
+                    decent_choice = new_position.copy()
+                else:
+                    if decent_choice is not None:
+                        out = list(decent_choice)
+                        assert opponent_fleet[*out] == " "
+                        return out
+
+
+        indices = np.array(np.where(opponent_fleet == " "))
+        indices = indices[:, indices.sum(axis=0) % 2 == 1]
+        if indices.shape[1] == 0:
+            indices = np.array(np.where(opponent_fleet == " "))
+
+        i = np.random.randint(0, indices.shape[1])
+        out =  [int(j) for j in (indices[:, i])]
+        assert opponent_fleet[*out] == " "
+        return out
+
 
     def wonky_rps(
         self,
@@ -331,9 +356,9 @@ class Mark1:
         }
 
         losing_hand = {
-            "r": "p",
-            "p": "s",
-            "s": "r",
+            "r": "s",
+            "p": "r",
+            "s": "p",
         }
 
         if wonk_level == "wonk":
