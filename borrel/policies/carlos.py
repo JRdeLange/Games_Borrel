@@ -205,7 +205,6 @@ class Carlos:
         return self.tron_grid[r][c] == " "
 
     def _tron_flood_fill_area(self, r: int, c: int) -> int:
-        """Flood fill from (r, c) to estimate open space"""
         if not self._tron_is_safe(r, c):
             return 0
 
