@@ -3,7 +3,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from collections import deque
-
+import random
 
 class Carlos:
 
@@ -18,6 +18,14 @@ class Carlos:
         self.minority_losses = {}
         self.minority_switches = {}
         self.minority_last_won = {}
+        self.wonk_profiles = {
+            "wonk": (0.5, 1.0),
+            "turbowonk": (2.5, 10.0),
+            "hyperwonk": (5.0, 30.0),
+            "golden wonk": (0.5, 0.0),
+            "golden turbowonk": (2.5, 0.0),
+            "golden hyperwonk": (5.0, 0.0),
+        }
         # Feel free to store whatever you want here.
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
@@ -266,6 +274,45 @@ class Carlos:
 
         Good luck with this age-old classic!
         """
+        directions = ["up", "down", "left", "right"]
+        occupied = set()
+        
+        def is_valid(pos, direction, length):
+            dx, dy = 0, 0
+            if direction == "up": dx, dy = -1, 0
+            elif direction == "down": dx, dy = 1, 0
+            elif direction == "left": dx, dy = 0, -1
+            elif direction == "right": dx, dy = 0, 1
+            
+            x, y = pos
+            coords = []
+            for _ in range(length):
+                if 0 <= x < grid_size and 0 <= y < grid_size and (x, y) not in occupied:
+                    coords.append((x, y))
+                    x += dx
+                    y += dy
+                else:
+                    return False, []
+            return True, coords
+
+        new_positions = []
+        new_directions = []
+
+        for _, row in boat_template.iterrows():
+            length = row["length"]
+            placed = False
+            while not placed:
+                direction = random.choice(directions)
+                start_pos = [random.randint(0, grid_size - 1), random.randint(0, grid_size - 1)]
+                valid, coords = is_valid(start_pos, direction, length)
+                if valid:
+                    occupied.update(coords)
+                    new_positions.append(start_pos)
+                    new_directions.append(direction)
+                    placed = True
+
+        boat_template["position"] = new_positions
+        boat_template["direction"] = new_directions
         return boat_template
 
     def battleship_turn(
@@ -307,9 +354,31 @@ class Carlos:
 
         Good luck with this age-old classic!
         """
-        x = np.random.randint(0, grid_size)
-        y = np.random.randint(0, grid_size)
-        return [x, y]
+        target_cells = []
+        hunt_cells = []
+
+        for x in range(grid_size):
+            for y in range(grid_size):
+                if opponent_fleet[x, y] == "X":
+                    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < grid_size and 0 <= ny < grid_size:
+                            if opponent_fleet[nx, ny] == " ":
+                                target_cells.append((nx, ny))
+                elif opponent_fleet[x, y] == " ":
+                    if (x + y) % 2 == 0:
+                        hunt_cells.append((x, y))
+
+        if target_cells:
+            return list(random.choice(target_cells))
+        elif hunt_cells:
+            return list(random.choice(hunt_cells))
+
+        for x in range(grid_size):
+            for y in range(grid_size):
+                if opponent_fleet[x, y] == " ":
+                    return [x, y]
+        return [0, 0]
 
     def wonky_rps(
         self,
@@ -374,4 +443,42 @@ class Carlos:
 
         Good luck with this fun game of risk management!
         """
-        return str(np.random.choice(["r", "p", "s"]))
+        if history.empty:
+            return np.random.choice(["r", "p", "s"])
+
+        player_cols = [col for col in history.columns if col.endswith("_score")]
+        me = player_cols[0][:-6]
+        opponent = player_cols[1][:-6]
+
+        my_score = history[f"{me}_score"].iloc[-1]
+        opp_score = history[f"{opponent}_score"].iloc[-1]
+        score_diff = my_score - opp_score
+        risk_aversion = 0.1 + 0.001 * score_diff
+
+        opp_moves = history[opponent].dropna()
+        freq = opp_moves.value_counts(normalize=True).to_dict()
+        opp_probs = {k: freq.get(k, 0.0) for k in ["r", "p", "s"]}
+
+        beats = {"r": "s", "p": "r", "s": "p"}
+
+        relevant_rows = history[history["wonk_level"] == wonk_level]
+        if len(relevant_rows) >= 5:
+            wonk_mean = relevant_rows["wonkfactor"].mean()
+            wonk_std = relevant_rows["wonkfactor"].std()
+        else:
+            wonk_mean, wonk_std = self.wonk_profiles.get(wonk_level, (1.0, 0.0))
+
+        def expected_score(move: str) -> float:
+            win_prob = sum(prob for opp, prob in opp_probs.items() if beats[move] == opp)
+            base_win_score = 100
+
+            if move == wonky_hand:
+                score = base_win_score * wonk_mean * win_prob
+                penalty = risk_aversion * (wonk_std * win_prob)
+                return score - penalty
+            else:
+                return base_win_score * win_prob
+
+        return max(["r", "p", "s"], key=expected_score)
+
+        
