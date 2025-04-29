@@ -1,4 +1,4 @@
-WHAT THE EVEN?
+### WHAT THE EVEN?
 
 Hi! This is my agent/policy programming borrel where you will fight to the death, with your code as your champion!
 
@@ -22,7 +22,7 @@ Run `poetry env use 3.11.5` (or another 3.11.x)
 
 Run `poetry install`
 
-RULES
+### RULES
 
 - Internet and ChatGPT are free game.
 - Cheating by walking over to another player and looking at their code is free game.
@@ -35,10 +35,23 @@ RULES
 - Keep yourself to the libraries available (most relevant are numpy, pandas, scipy and matplotlib (for some visualization during development)).
 - If you discover a significant (up to my judgement) bug, let me know and get a bonus point!
 
-TIPS
+### TIPS
 
 - I expect time to be quite limited, so divide your time wisely between the games.
 - You can store persistent-between-turns data in your class.
 - `testing.ipynb` is set up to be used during development. It allows you to test your code against a random dummy player, as well as against other real players once they have pushed their policies.
 - After the first round you can pull and run `play.ipynb` to see how your code performs against the other players' policies from the previous round.
 - Ask me if you have any questions!
+
+### RESULTS
+
+#### Round 1:
+
+
+#### Round 2:
+
+
+#### Round 3:
+
+
+#### Total:
