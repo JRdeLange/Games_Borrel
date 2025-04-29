@@ -2,6 +2,8 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+from collections import deque
+import random
 
 
 class Do:
@@ -86,7 +88,70 @@ class Do:
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
         
-        return str(np.random.choice(["up", "down", "left", "right"]))
+        self.tron_grid = grid
+        self.tron_height = len(grid)
+        self.tron_width = len(grid[0])
+
+        self.tron_dirs = {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
+        }
+
+        dir_symbols = {">": "right", "<": "left", "^": "up", "v": "down"}
+
+        for r in range(self.tron_height):
+            for c in range(self.tron_width):
+                ch = grid[r][c]
+                if ch in dir_symbols:
+                    self_pos = (r, c)
+                    self_dir = dir_symbols[ch]
+
+        legal_moves = []
+        for move, (dr, dc) in self.tron_dirs.items():
+            nr, nc = self_pos[0] + dr, self_pos[1] + dc
+            if self._tron_is_safe(nr, nc):
+                legal_moves.append(move)
+
+        if not legal_moves:
+            return self_dir
+
+        best_move = max(
+            legal_moves,
+            key=lambda move: self._tron_flood_fill_area(
+                self_pos[0] + self.tron_dirs[move][0],
+                self_pos[1] + self.tron_dirs[move][1]
+            )
+        )
+
+        return best_move
+
+    def _tron_is_safe(self, r: int, c: int) -> bool:
+        if not (0 <= r < self.tron_height and 0 <= c < self.tron_width):
+            return False
+        return self.tron_grid[r][c] == " "
+
+    def _tron_flood_fill_area(self, r: int, c: int) -> int:
+        if not self._tron_is_safe(r, c):
+            return 0
+
+        visited = set()
+        queue = deque([(r, c)])
+        visited.add((r, c))
+        area = 0
+
+        while queue:
+            cr, cc = queue.popleft()
+            area += 1
+            for dr, dc in self.tron_dirs.values():
+                nr, nc = cr + dr, cc + dc
+                if (nr, nc) not in visited and self._tron_is_safe(nr, nc):
+                    visited.add((nr, nc))
+                    queue.append((nr, nc))
+
+        return area
+
 
     def battleship_place_boats(
         self, boat_template: pd.DataFrame, grid_size: int
@@ -132,6 +197,7 @@ class Do:
         """
         boat_template_changed = boat_template.copy()
         occupied = set()
+        all_directions = ["left", "right", "up", "down"]
         
         # Helper to check if a position is valid
         def is_valid(pos, length, direction):
@@ -151,6 +217,8 @@ class Do:
             for _ in range(length):
                 if not (0 <= x < 6 and 0 <= y < 6):
                     return False, []
+                if not (0 <= x + (dx * length) < 6 and 0 <= y + (dy * length) < 6):
+                    return False, []
                 if (x, y) in occupied:
                     return False, []
                 positions.append((x, y))
@@ -160,33 +228,23 @@ class Do:
             return True, positions
         
         # Try placing each boat
-        directions = ["right", "down", "left", "up"]
-        i = 0
-        for idx, row in boat_template_changed.iterrows():
-            length = row["length"]
-            placed = False
-            for y in range(6):
-                for x in range(6):
-                    for direction in directions:
-                        valid, pos_list = is_valid((x, y), length, direction)
-                        if valid:
-                            boat_template_changed.at[idx, "position"] = [x, y]
-                            boat_template_changed.at[idx, "direction"] = direction
-                            occupied.update(pos_list)
-                            placed = True
-                            break
-                    if placed:
-                        break
-                if placed:
-                    break
-            if not placed:
-                # If we can't place the boat, we can just return the original template
-                boat_template_changed = boat_template.copy()
-                break
-        
+        boat_template.sort_values(by="length", ascending=False, inplace=True)
+        for row in boat_template.iterrows():
+            for _ in range(100):
+                length = row[1]["length"]
+                position = random.randint(0, 6), random.randint(0, 6)
+                direction = random.choice(all_directions)
 
-        
-        
+                valid, positions = is_valid(position, length, direction)
+
+                if valid:
+                    for pos in positions:
+                        occupied.add(pos)
+                    boat_template.at[row[0], "position"] = positions[0]
+                    boat_template.at[row[0], "direction"] = direction
+                    break
+                
+                
         return boat_template
 
     def battleship_turn(
@@ -228,8 +286,8 @@ class Do:
 
         Good luck with this age-old classic!
         """
-        x = np.random.randint(0, grid_size)
-        y = np.random.randint(0, grid_size)
+        x = np.random.randint(0, 4)
+        y = np.random.randint(0, 4)
         return [x, y]
 
     def wonky_rps(
@@ -295,4 +353,10 @@ class Do:
 
         Good luck with this fun game of risk management!
         """
-        return str(np.random.choice(["r", "p", "s"]))
+        
+
+        if wonk_level.startswith("golden"):
+            return str(np.random.choice(["r", "p", "s", wonky_hand, wonky_hand, wonky_hand]))
+        else:
+            return str(np.random.choice(["r", "p", "s"]))
+    

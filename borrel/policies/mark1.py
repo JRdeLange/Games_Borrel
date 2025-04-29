@@ -178,8 +178,8 @@ class Mark1:
         return pd.DataFrame(
             {
                 "length": [2, 2, 3, 5],
-                "position": [[0, 1], [1, 2], [2, 0], [0, 4]],
-                "direction": ["down", "down", "right", "down"],
+                "position": [[0, 1], [2, 3], [3, 0], [1, 5]],
+                "direction": ["right", "down", "right", "down"],
             }
         )
 
@@ -223,11 +223,37 @@ class Mark1:
 
         Good luck with this age-old classic!
         """
-        try:
-            self.turn += 1
-            return self.boat_template["position"].iloc[self.turn - 1]
-        except:
-            pass
+        import math
+
+        directions = (
+            np.array([0, 1]),
+            np.array([0, -1]),
+            np.array([-1, 0]),
+            np.array([1, 0]),
+        )
+
+        hits = np.isin(opponent_fleet, ["S", "X"])
+
+
+        for i, j in np.ndindex(hits.shape):
+            old_position = np.array([i, j])
+            if hits[*old_position]:
+                for d in directions:
+                    neighbour = False
+                    while True:
+                        new_position = old_position + d
+
+                        if np.all(np.clip(new_position, 0, 5) == old_position):
+                            break
+
+                        if opponent_fleet[*new_position] == " " and neighbour:
+                            return list(new_position)
+
+                        if hits[*new_position]:
+                            old_position = new_position
+                            neighbour = True
+                        else:
+                            break
 
         indices = list(zip(*np.where(opponent_fleet == " ")))
         i = np.random.randint(0, len(indices))
@@ -296,4 +322,37 @@ class Mark1:
 
         Good luck with this fun game of risk management!
         """
-        return str(np.random.choice(["r", "p", "s"]))
+        import random
+
+        weights = {
+            "r": 1,
+            "p": 1,
+            "s": 1,
+        }
+
+        losing_hand = {
+            "r": "p",
+            "p": "s",
+            "s": "r",
+        }
+
+        if wonk_level == "wonk":
+            weights[wonky_hand] = 0.5
+        elif wonk_level == "turbowonk":
+            weights[wonky_hand] = 5
+            weights[losing_hand[wonky_hand]] = 0
+        elif wonk_level == "hyperwonk":
+            weights[wonky_hand] = 25
+            weights[losing_hand[wonky_hand]] = 0
+        elif wonk_level == "golden wonk":
+            weights[wonky_hand] = 0.8
+        elif wonk_level == "golden turbowonk":
+            weights[wonky_hand] = 8
+            weights[losing_hand[wonky_hand]] = 0
+        elif wonk_level == "golden hyperwonk":
+            weights[wonky_hand] = 40
+            weights[losing_hand[wonky_hand]] = 0
+
+        out = random.choices(list(weights.keys()), weights=list(weights.values()))
+        assert len(out) == 1
+        return out[0]
