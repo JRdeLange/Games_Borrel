@@ -5,7 +5,6 @@ import pandas as pd
 
 
 class Dummy:
-
     def __init__(self, name: str = "dummy"):
         # NOTE: DO NOT TOUCH!
         self.name = name  # NOTE: DO NOT TOUCH!
@@ -238,3 +237,10 @@ class Dummy:
         Good luck with this fun game of risk management!
         """
         return str(np.random.choice(["r", "p", "s"]))
+
+    def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
+        for nr in range(1, 5):
+            if nr not in info["pieces_finished"][self.name]:
+                return nr
+
+        return 1
