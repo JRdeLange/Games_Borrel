@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 # Is multiplied by nr of players for total board length
-BASE_BOARD_LENGTH = 10
+BASE_BOARD_LENGTH = 5
 
 
 """
@@ -13,7 +13,7 @@ This is a slightly modified version of the classic game of Sorry! (Mens erger je
 Every turn you will get a pandas dataframe with the current state of the board
 It will have a row for each board space
 It will have a column called "home" which will hold None or the name of the player whose home it is (e.g. "Mees" or "Ivo")
-- Homes are evenly space apart, every 10 spaces
+- Homes are evenly space apart, every 5 spaces
 It will have a column called "space" which will hold either None (empty space) or a piece
 Pieces are named as "playername_piecenum" (e.g. "Ivo_1", "Jan_2")
 Each player has 4 pieces, numbered 1-4
@@ -38,14 +38,14 @@ Moving rules:
 - If you move a piece on the board, it will move forward a number of spaces equal to the dice roll
 - If a piece lands on a space occupied by another piece, the other piece is sent back to its home
 
-Examples (with a homes 5 spaces apart instead of 10 to make the example a bit smaller and only 2 players, Mark and Dirk):
-| index | space | home  |
-| 0     | None  | Mark  |
+Examples (with only 2 players, Mark and Dirk):
+| index | home  | space |
+| 0     | Mark  | None  |
 | 1     | None  | None  |
 | 2     | None  | None  |
 | 3     | None  | None  |
 | 4     | None  | None  |
-| 5     | None  | Dirk  |
+| 5     | Dirk  | None  |
 | 6     | None  | None  |
 | 7     | None  | None  |
 | 8     | None  | None  |
@@ -57,13 +57,13 @@ info dict:
 }
 
 Mark now rolls a 6 and decides to move piece 1 from home to the starting position. The board now looks like this:
-| index | space | home  |
-| 0     | None  | Mark  |
-| 1     | Mark_1| None  |
+| index | home  | space |
+| 0     | Mark  | None  |
+| 1     | None  | Mark_1|
 | 2     | None  | None  |
 | 3     | None  | None  |
 | 4     | None  | None  |
-| 5     | None  | Dirk  |
+| 5     | Dirk  | None  |
 | 6     | None  | None  |
 | 7     | None  | None  |
 | 8     | None  | None  |
@@ -75,16 +75,16 @@ info dict:
 }
 
 Several turn later the board looks like this:
-| index | space | home  |
-| 0     | None  | Mark  |
+| index | home  | space |
+| 0     | Mark  | None  |
 | 1     | None  | None  |
 | 2     | None  | None  |
 | 3     | None  | None  |
 | 4     | None  | None  |
-| 5     | Mark_1| Dirk  |
+| 5     | Dirk  | Mark_1|
 | 6     | None  | None  |
 | 7     | None  | None  |
-| 8     | Dirk_1| None  |
+| 8     | None  | Dirk_1|
 | 9     | None  | None  |
 info dict:
 {
@@ -93,16 +93,16 @@ info dict:
 }
 
 Mark now rolls a 3 and decides to move piece 1. The board now looks like this:
-| index | space | home  |
-| 0     | None  | Mark  |
+| index | home  | space |
+| 0     | Mark  | None  |
 | 1     | None  | None  |
 | 2     | None  | None  |
 | 3     | None  | None  |
 | 4     | None  | None  |
-| 5     | None  | Dirk  |
+| 5     | Dirk  | None  |
 | 6     | None  | None  |
 | 7     | None  | None  |
-| 8     | Mark_1| None  |
+| 8     | None  | Mark_1|
 | 9     | None  | None  |
 info dict:
 {
@@ -138,6 +138,8 @@ info dict:
 If you perform an illegal move, a random piece of yours is removed from the board and sent back to your home.
 A move is illegal if it refers to a piece that cannot be moved or placed on the board
 If no pieces can be removed from the board, nothing happens
+
+After every full round of turns the game checks if any player has won by getting all 4 pieces finished. This means two players can tie and both win.
 """
 
 
