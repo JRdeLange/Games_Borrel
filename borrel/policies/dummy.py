@@ -307,13 +307,12 @@ class Dummy:
 
         Example input:
 
-          Dummy_1 Dummy_2 Dummy_1_score Dummy_2_score Dummy_1_reload_timer Dummy_2_reload_timer rounds_remaining
-        0       r       s           100             0                    5                    5                4
-        1       p       d           200             0                    4                    4                3
-        2       r       d           200           100                    3                    3                2
-        3       p       g           200           200                    2                    2                1
-        4       g       d           200           300                    1                    1                0
-
+          dummy Opponent dummy_score Opponent_score dummy_reload_timer Opponent_reload_timer rounds_remaining  dummy_bet  Opponent_bet
+        0     g        s        -100            200                  4                     4                4      100.0         100.0
+        1     s        p          90            100                  3                     3                3      100.0         100.0
+        2     s        p         290              0                  2                     2                2      100.0         100.0
+        3     g        r         190            200                  1                     1                1      100.0         100.0
+        4     g        g         390            100                  0                     0                0      100.0         100.0
 
         A full game is always 400 rounds.
         If you return an invalid move (e.g. GUN when not reloaded, lending more than the allowed 2000 per round), you forfeit the round and your opponent wins by default.
