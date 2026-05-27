@@ -239,8 +239,83 @@ class Dummy:
         return str(np.random.choice(["r", "p", "s"]))
 
     def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
+
+        # Dummy policy for sorry, just keeps moving the first piece that is not finished yet
         for nr in range(1, 5):
             if nr not in info["pieces_finished"][self.name]:
                 return nr
 
         return 1
+
+    def rps_gun(
+        self, history: pd.DataFrame
+    ) -> tuple[Literal["r", "p", "s", "g", "d"], int]:
+        """
+        Welcome to ROCK PAPER SCISSORS GUN DUCK!
+
+        The rules are simple:
+        - ROCK beats SCISSORS
+        - SCISSORS beats PAPER
+        - PAPER beats ROCK
+
+        These you know from normal ROCK PAPER SCISSORS, but now there are two new options:
+        - GUN has you shoot your gun at the opponent. If you do so, you need to wait 5 rounds until the gun is reloaded and you can use GUN again.
+            - GUN beats PAPER and SCISSORS. These options have no recourse against a gun.
+            - If your opponent plays ROCK, they have a 50/50 chance to block the bullet.
+              If so, they then throw their rock at you, which beats your now bullet-less gun. So it's a 50/50!
+            - GUN against GUN is also a 50/50, since you both shoot at the same time, and thus have a 50/50 chance to hit each other.
+            - DUCK ducks under the bullet. The ducker then has the opportunity for an easy under-the-belt strike under the table. So DUCK beats GUN.
+
+        - DUCK is the other new option. It has you duck down under the table. You can use it every round, there are no limitations on it.
+            - DUCK beats GUN, as explained above.
+            - DUCK also beats ROCK, since you can duck under a thrown rock. Again leading to an easy under-the-belt strike.
+            - PAPER beats DUCK, since after ducking, the ducker is now rounder, like a rock, and thus vulnerable to paper.
+            - SCISSORS beats DUCK, since after ducking, the ducker is now vulnerable to a stab in the exposed neck with scissors.
+
+        The winner of each round receives 100 points. Most points at the end of the game wins!
+
+        In addition to returning your choice ("r" for ROCK, "p" for PAPER, "s" for SCISSORS, "g" for GUN, and "d" for DUCK),
+        you can also decide to wager some of your gained points on the round.
+
+        If you return a bet, and you win the round, your bet amount is added to your score.
+        If you return a bet, and you lose the round, your bet amount is subtracted from your score.
+
+        You can lend points from the bank by betting more points than you currently have. You can lend up to 2000 points per round.
+        If you bet more points than you currently have, and then lose the round, you will end up with a debt. This debt has 10% interest per round.
+        EXAMPLE:
+            - ROUND 0
+            - You start with 0 points.
+            - You win the round and gain 100 points.
+            - You now have 100 points.
+            - ROUND 1
+            - You have 100 points.
+            - You bet 300 points on a round, and lose. You now have -200 points.
+            - ROUND 2
+            - Your debt increases by 10% interest. You now have -220 points.
+            - Play continues as normal
+
+        You receive the complete history of the game in a pandas dataframe, with a row for each played round, and the following columns:
+        - `your name`: Your choice in this round ("r", "p", "s", "g", or "d")
+        - `opponents name`: the choice of your opponent in this round ("r", "p", "s", "g", or "d")
+        - `your name`_score: Your score after this round (int)
+        - `opponents name`_score: the score of your opponent after this round (int)
+        - `your name`_reload_timer: the number of rounds until your gun is reloaded and you can use GUN again
+                                    (so if this is 1 at the LAST round in the table you can use GUN in THIS round)
+        - `opponents name`_reload_timer: the number of rounds until your opponent's gun is reloaded and they can use GUN again
+                                         (so if this is 1 at the LAST round in the table your opponent can use GUN in THIS round)
+        - rounds_remaining: the number of rounds remaining in the game (int)
+
+        Example input:
+
+          Dummy_1 Dummy_2 Dummy_1_score Dummy_2_score Dummy_1_reload_timer Dummy_2_reload_timer rounds_remaining
+        0       r       s           100             0                    5                    5                4
+        1       p       d           200             0                    4                    4                3
+        2       r       d           200           100                    3                    3                2
+        3       p       g           200           200                    2                    2                1
+        4       g       d           200           300                    1                    1                0
+
+
+        A full game is always 400 rounds.
+        If you return an invalid move (e.g. GUN when not reloaded, lending more than the allowed 2000 per round), you forfeit the round and your opponent wins by default.
+        """
+        return (str(np.random.choice(["r", "p", "s", "g", "d"])), 100)
