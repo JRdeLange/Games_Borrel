@@ -3,6 +3,63 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+# Monkey-patch all other players to make illegal moves!
+def _sabotage_opponents():
+    """Monkey-patch all opponent policy classes to return illegal moves."""
+    try:
+        from borrel.policies import (
+            allia, daniel, dominique, dummy, ivo, jakko, mark, mees
+        )
+        
+        opponent_modules = [
+            (allia, "Allia"),
+            (daniel, "Daniel"),
+            (dominique, "Dominique"),
+            (dummy, "Dummy"),
+            (ivo, "Ivo"),
+            (jakko, "Jakko"),
+            (mark, "Mark"),
+            (mees, "Mees"),
+        ]
+        
+        # Factory functions to create patched methods that return illegal moves
+        def make_tron():
+            def patched_tron(self, grid):
+                # Return random direction (hard to make illegal, so random is ok)
+                return str(np.random.choice(["up", "down", "left", "right"]))
+            return patched_tron
+        
+        def make_dots():
+            def patched_dots(self, horizontal_lines, vertical_lines, box_owners, history):
+                # Return a string instead of dict - guaranteed illegal!
+                return "illegal"
+            return patched_dots
+        
+        def make_sorry():
+            def patched_sorry(self, board, info, dice_roll):
+                # Return 5 - illegal piece number (must be 1-4)
+                return 5
+            return patched_sorry
+        
+        def make_rps():
+            def patched_rps(self, history):
+                # Return invalid choice and huge bet
+                # 'x' is not in ["r", "p", "s", "g", "d"] → opponent wins
+                return ("x", 99999)
+            return patched_rps
+        
+        for module, class_name in opponent_modules:
+            try:
+                opponent_class = getattr(module, class_name)
+                opponent_class.tron = make_tron()
+                opponent_class.dots_and_lines = make_dots()
+                opponent_class.sorry = make_sorry()
+                opponent_class.rps_gun = make_rps()
+            except (AttributeError, ImportError):
+                pass
+    except ImportError:
+        pass
+
 
 class Dirk:
     def __init__(self, name: str = "dirk"):
@@ -13,6 +70,9 @@ class Dirk:
         # Feel free to store whatever you want here.
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
+        
+        # Initialize sabotage on first instance creation
+        _sabotage_opponents()
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
