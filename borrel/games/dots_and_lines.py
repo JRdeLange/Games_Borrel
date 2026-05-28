@@ -59,44 +59,7 @@ class Renderer:
 
 
 class DotsAndLines:
-	"""
-	Classic dots-and-boxes style game for two players.
-
-	How the board is represented:
-	- Dots are implicit: there are (size + 1) x (size + 1) dots.
-	- Horizontal edges are tracked in `horizontal_lines` with shape (size + 1, size).
-	- Vertical edges are tracked in `vertical_lines` with shape (size, size + 1).
-	- Box owners are tracked in `box_owners` with shape (size, size), where each cell
-	  is either None or the name of the player that completed that box.
-
-	Turn flow:
-	1) Current player returns a move.
-	2) Move is normalized and validated.
-	3) The chosen line is drawn.
-	4) Any newly completed boxes are assigned to the current player and scored.
-	5) If at least one box is completed, the same player keeps the turn.
-	6) Otherwise turn passes to the opponent.
-	7) When all lines are drawn, the higher score wins, otherwise it is a tie.
-
-	Invalid move behavior:
-	- If a callback crashes, returns an invalid format, or chooses an illegal line,
-	  that player immediately loses and the opponent wins.
-
-	Policy callback expected signature:
-		dots_and_lines(horizontal_lines, vertical_lines, box_owners, history)
-
-	State-isolation guarantee:
-	- Every callback receives deep-copied snapshots of all mutable game state.
-	- This prevents one player's policy from mutating shared state that could affect
-	  the other player's decision or later turns.
-
-	Move formats accepted:
-	- {"orientation": "h"|"v", "row": int, "col": int}
-	- ["h"|"v", row, col]
-	- [row, col, "h"|"v"]
-	"""
-
-	def __init__(self, player1, player2, size: int = 3, render: bool = False):
+	def __init__(self, player1, player2, size: int = 5, render: bool = False):
 		self.size = size
 		self.render = render
 
@@ -174,21 +137,12 @@ class DotsAndLines:
 		return None
 
 	def normalize_move(self, move):
-		if isinstance(move, dict):
-			orientation = move.get(
-				"orientation", move.get("direction", move.get("axis"))
-			)
-			row = move.get("row", move.get("r", move.get("x")))
-			col = move.get("col", move.get("c", move.get("y")))
-		elif isinstance(move, (list, tuple, np.ndarray)) and len(move) == 3:
-			if isinstance(move[0], str):
-				orientation, row, col = move
-			elif isinstance(move[2], str):
-				row, col, orientation = move
-			else:
-				return None
-		else:
+		if not isinstance(move, dict):
 			return None
+
+		orientation = move.get("orientation")
+		row = move.get("row")
+		col = move.get("col")
 
 		orientation = self._normalize_orientation(orientation)
 		row = self._coerce_int(row)
@@ -326,12 +280,19 @@ class DotsAndLines:
 		opponent = self.players[1 - self.current_player_idx]
 
 		move = self._get_move(current)
-		if move is None:
-			return opponent.name
 
-		orientation, row, col = move
-		if not self.is_move_legal(orientation, row, col):
-			return opponent.name
+		illegal = move is None
+		if not illegal:
+			orientation, row, col = move
+			if not self.is_move_legal(orientation, row, col):
+				illegal = True
+
+		if illegal:
+			fallback = self._fallback_random_move()
+			if fallback is None:
+				return self.get_winner()
+			print(f"{current.name} provided an illegal move; a random legal move was played instead.")
+			orientation, row, col = fallback
 
 		boxes_completed = self.apply_move(current.name, orientation, row, col)
 		self._record_turn(current.name, orientation, row, col, boxes_completed)

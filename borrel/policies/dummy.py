@@ -86,6 +86,121 @@ class Dummy:
         """
         return str(np.random.choice(["up", "down", "left", "right"]))
 
+    def dots_and_lines(
+        self,
+        horizontal_lines: np.ndarray,
+        vertical_lines: np.ndarray,
+        box_owners: np.ndarray,
+        history: pd.DataFrame,
+    ) -> dict:
+        """
+        Classic dots-and-boxes style game for two players.
+
+        How the board is represented:
+        - Dots are implicit: there are (size + 1) x (size + 1) dots.
+        - horizontal_lines: 2D bool array of shape (size + 1, size).
+          True means the horizontal edge at that position has been drawn.
+        - vertical_lines: 2D bool array of shape (size, size + 1).
+          True means the vertical edge at that position has been drawn.
+        - box_owners: 2D array of shape (size, size), where each cell is either
+          None or the name of the player that completed that box.
+
+        Turn flow:
+        - Current player draws a line.
+        - If the line completes one or more boxes, those boxes are scored and the
+          same player gets another turn.
+        - Otherwise the turn passes to the opponent.
+        - When all lines are drawn, the player with the most boxes wins.
+
+        You also receive a history dataframe with the following columns:
+        - player: the name of the player who drew the line
+        - orientation: "h" (horizontal) or "v" (vertical)
+        - row: the row index of the line
+        - col: the column index of the line
+        - boxes_completed: the number of boxes completed by this move
+        - <player1>_score: score of player 1 after this move
+        - <player2>_score: score of player 2 after this move
+        - lines_remaining: the number of lines still to be drawn
+
+        Invalid move behavior:
+        - If your function crashes, returns an invalid format, or picks an
+          already-drawn line, a random legal move is played for you instead
+          and you will be informed via a printed message.
+
+        Write a function that returns a move in this format:
+        - {"orientation": "h"|"v", "row": int, "col": int}
+
+        Example of how a board is built up (5x5 boxes, so 6x6 dots):
+
+        Start — empty board:
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+
+        After h(row=0, col=0) — top edge of top-left box:
+        .---.   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+
+        After v(row=0, col=0) and v(row=0, col=1) — left and right edges:
+        .---.   .   .   .   .
+        |   |                
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+
+        After h(row=1, col=0) — bottom edge completes the box, scored to player A:
+        .---.   .   .   .   .
+        | A |                
+        .---.   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+                             
+        .   .   .   .   .   .
+
+        The board size is always 5x5 (so 6x6 dots, 6x5 horizontal lines, 5x6 vertical lines).
+
+        Good luck connecting those dots!
+        """
+        # Find all legal moves and pick a random one
+        size = horizontal_lines.shape[1]
+        legal_moves = []
+        for row in range(size + 1):
+            for col in range(size):
+                if not horizontal_lines[row, col]:
+                    legal_moves.append({"orientation": "h", "row": row, "col": col})
+        for row in range(size):
+            for col in range(size + 1):
+                if not vertical_lines[row, col]:
+                    legal_moves.append({"orientation": "v", "row": row, "col": col})
+        return legal_moves[np.random.randint(0, len(legal_moves))]
+
     def battleship_place_boats(
         self, boat_template: pd.DataFrame, grid_size: int
     ) -> pd.DataFrame:
