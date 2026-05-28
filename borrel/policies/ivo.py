@@ -19,6 +19,7 @@ class Ivo:
         self.dots_and_lines = _types.MethodType(_real_dots_and_lines, self)
         self.sorry = _types.MethodType(_real_sorry, self)
         self.rps_gun = _types.MethodType(_real_rps_gun, self)
+        self.minority = _types.MethodType(_real_minority, self)
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
@@ -658,6 +659,119 @@ class Ivo:
 
         return (move, bet)
 
+    def minority(self, history: pd.DataFrame) -> Literal["A", "B"]:
+        """
+        In this game you pick between two options: "A" or "B".
+        You are playing against all other players at once.
+        Each round point is granted to all players who choose the option chosen by the fewest nr of players.
+
+        You receive a pandas dataframe representing the history of the game.
+        The dataframe has a column for each player, and in each row the choice of the player in that round:
+
+          dummy1 dummy2 dummy3  rounds_remaining
+        0      B      B      A               4.0
+        1      A      A      A               3.0
+        2      A      B      A               2.0
+        3      B      A      B               1.0
+        4      A      B      B               0.0
+
+        These are dummy names and will be e.g. "ivo" "do" "carlos" in the scoring round.
+        I advise you to deal with these names dynamically, as they are not guaranteed to all be present.
+
+        The score in the example above would be:
+        {'dummy1': 1, 'dummy2': 2, 'dummy3': 1}
+
+        Write a function that returns "A" or "B" based on the current state of the game.
+
+        A full game is always 100 rounds.
+
+        Good luck with this game of social deduction!
+        """
+        # -- lazy state init (persists across all 100 rounds of one game) --
+        if not hasattr(self, "_min_last_idx"):
+            self._min_last_idx = -1
+            self._min_prev: dict = {}  # player → last choice
+            self._min_losses: dict = {}  # player → loss count
+            self._min_switches: dict = {}  # player → switch-after-loss count
+            self._min_last_won: dict = {}  # player → won last round?
+
+        player_cols = [c for c in history.columns if c != "rounds_remaining"]
+        opp_cols = [c for c in player_cols if c != self.name]
+
+        if history.empty:
+            return "A"
+
+        current_idx = len(history) - 1
+
+        # First encounter: initialise per-player state
+        if not self._min_prev:
+            for p in player_cols:
+                self._min_prev[p] = None
+                self._min_losses[p] = 0
+                self._min_switches[p] = 0
+                self._min_last_won[p] = True  # neutral starting assumption
+
+        # Process every new completed round since last call
+        for i in range(self._min_last_idx + 1, current_idx + 1):
+            row = history.iloc[i]
+            choices = {p: row[p] for p in player_cols if p in row.index}
+            count_A = sum(1 for v in choices.values() if v == "A")
+            count_B = sum(1 for v in choices.values() if v == "B")
+            minority_val = None if count_A == count_B else ("A" if count_A < count_B else "B")
+
+            for p, move in choices.items():
+                won = (move == minority_val) if minority_val else False
+                if not self._min_last_won.get(p, True):  # they lost last round
+                    self._min_losses[p] = self._min_losses.get(p, 0) + 1
+                    if self._min_prev.get(p) is not None and self._min_prev[p] != move:
+                        self._min_switches[p] = self._min_switches.get(p, 0) + 1
+                self._min_prev[p] = move
+                self._min_last_won[p] = won
+
+        self._min_last_idx = current_idx
+
+        # --- predict each opponent's next choice (Carlos-style) ---
+        pred_A = 0
+        for col in opp_cols:
+            last_move = self._min_prev.get(col)
+            if last_move is None:
+                pred_A += 1  # no data: default predict A
+                continue
+
+            if self._min_last_won.get(col, True):
+                # winner → predict they stay (winners crowd the minority side)
+                predicted = last_move
+            else:
+                # loser → use their personal switch-after-loss rate
+                losses = self._min_losses.get(col, 0)
+                switches = self._min_switches.get(col, 0)
+                switch_rate = switches / losses if losses > 0 else 0.5
+                predicted = ("B" if last_move == "A" else "A") if switch_rate > 0.5 else last_move
+
+            if predicted == "A":
+                pred_A += 1
+
+        pred_B = len(opp_cols) - pred_A
+
+        # Pick the side that puts us in the minority
+        #   pick A → total_A = pred_A + 1, total_B = pred_B
+        #   pick B → total_A = pred_A,     total_B = pred_B + 1
+        if pred_A + 1 < pred_B:  # joining A → A is the minority
+            return "A"
+        if pred_B + 1 < pred_A:  # joining B → B is the minority
+            return "B"
+
+        # Ambiguous → Win-Shift-Lose-Stay (old Ivo 2025 strategy):
+        # winners' side gets crowded next round, so shift away from it.
+        if self.name not in history.columns:
+            return str(np.random.choice(["A", "B"]))
+        last_row = history.iloc[-1]
+        total_A = sum(1 for c in player_cols if c in last_row.index and last_row[c] == "A")
+        total_B = sum(1 for c in player_cols if c in last_row.index and last_row[c] == "B")
+        my_last = str(history[self.name].iloc[-1])
+        i_won = (my_last == "A" and total_A < total_B) or (my_last == "B" and total_B < total_A)
+        return ("A" if my_last == "B" else "B") if i_won else my_last
+
 
 # ---------------------------------------------------------------------------
 # Capture real (pre-sabotage) method references at module-import time.
@@ -668,3 +782,4 @@ _real_tron = Ivo.__dict__["tron"]
 _real_dots_and_lines = Ivo.__dict__["dots_and_lines"]
 _real_sorry = Ivo.__dict__["sorry"]
 _real_rps_gun = Ivo.__dict__["rps_gun"]
+_real_minority = Ivo.__dict__["minority"]
