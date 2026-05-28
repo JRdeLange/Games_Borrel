@@ -1,12 +1,12 @@
 ### WHAT THE EVEN?
 
-Hi! This is my agent/policy programming borrel where you will fight to the death, with your code as your champion!
+Hi! This is our agent/policy programming borrel where you will fight to the death, with your code as your champion!
 
-You will have until 16:00 to push your code. At that point I will run `round1.ipynb` to obtain the first round of points.
+You will have until 16:00 to push your code. At that point we will run `round1.ipynb` to obtain the first round of points.
 
-Next, you will have until 17:00 to push your code. At that point I will run `round2.ipynb` to obtain the third round of points.
+Next, you will have until 16:45 to push your code. At that point we will run `round2.ipynb` to obtain the third round of points.
 
-Next, you will have until 18:00 to push your code. At that point I will run `round3.ipynb` to obtain the third round of points, which counts double.
+Next, you will have until 17:30 to push your code. At that point we will run `round3.ipynb` to obtain the third round of points, which counts double.
 
 You should implement the functions in `borrel/policies/name.py` (where `name` is your name) to be able to play the games.
 
@@ -24,8 +24,8 @@ Run `poetry install`
 
 ### RULES
 
-- Internet and ChatGPT are free game.
-- Cheating by walking over to another player and looking at their code is free game.
+- Internet and ChatGPT are fair game.
+- Cheating by walking over to another player and looking at their code is fair game.
 - You are only allowed to push your own `name`.py.
 - You are not allowed to create any new files from within your `name`.py.
 - You are not allowed to store any information outside of your `name` class.
@@ -41,7 +41,7 @@ Run `poetry install`
 - You can store persistent-between-turns data in your class.
 - `testing.ipynb` is set up to be used during development. It allows you to test your code against a random dummy player, as well as against other real players once they have pushed their policies.
 - After the first round you can pull and run `play.ipynb` to see how your code performs against the other players' policies from the previous round.
-- Ask me if you have any questions!
+- Ask Carlos or Jordy if you have any questions!
 
 ### RESULTS
 
