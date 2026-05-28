@@ -14,6 +14,14 @@ class Daniel:
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
 
+        # State for minority game
+        self.minority_last_round_idx: int = -1
+        self.minority_players: list = []
+        self.minority_prev_moves: dict = {}
+        self.minority_losses: dict = {}
+        self.minority_switches: dict = {}
+        self.minority_last_won: dict = {}
+
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
         This game is inspired by the lightcycles in the movie Tron.
@@ -54,127 +62,87 @@ class Daniel:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
-        my_pos = None
-        current_direction = None
+        from collections import deque
 
-        
-        for i in range(grid.shape[0]):
-            for j in range(grid.shape[1]):
-                if grid[i, j] in ['>', '<', '^', 'v']:
-                    my_pos = (i, j)
-                    if grid[i, j] == '>':
-                        current_direction = 'right'
-                    elif grid[i, j] == '<':
-                        current_direction = 'left'
-                    elif grid[i, j] == '^':
-                        current_direction = 'up'
-                    elif grid[i, j] == 'v':
-                        current_direction = 'down'
-                    break
-            if my_pos:
-                break
-        
-        if not my_pos:
-            return "right"  # Fallback
-        
-        # Define direction vectors
-        directions = {
-            'up': (-1, 0),
-            'down': (1, 0),
-            'left': (0, -1),
-            'right': (0, 1)
-        }
-        
-        # Opposite directions (can't turn 180 degrees)
-        opposites = {
-            'up': 'down',
-            'down': 'up',
-            'left': 'right',
-            'right': 'left'
-        }
-        
-        def count_reachable_spaces(start_row, start_col):
-            """Count empty spaces reachable from a position using BFS."""
-            if start_row < 0 or start_row >= grid.shape[0]:
-                return 0
-            if start_col < 0 or start_col >= grid.shape[1]:
-                return 0
-            if grid[start_row, start_col] != ' ':
-                return 0
-            
-            visited = set()
-            queue = [(start_row, start_col)]
-            count = 0
-            
-            while queue:
-                row, col = queue.pop(0)
-                
-                if (row, col) in visited:
-                    continue
-                if row < 0 or row >= grid.shape[0]:
-                    continue
-                if col < 0 or col >= grid.shape[1]:
-                    continue
-                if grid[row, col] != ' ':
-                    continue
-                
-                visited.add((row, col))
-                count += 1
-                
-                # Add neighbors
-                queue.append((row + 1, col))
-                queue.append((row - 1, col))
-                queue.append((row, col + 1))
-                queue.append((row, col - 1))
-            
-            return count
-        
-        # Evaluate each direction
+        head_chars = {">" : (0, 1), "<": (0, -1), "^": (-1, 0), "v": (1, 0)}
+        my_pos = None
+        my_dir = None
+        opp_pos = None
+        rows, cols = grid.shape
+
+        for r in range(rows):
+            for c in range(cols):
+                if grid[r, c] in head_chars:
+                    my_pos = (r, c)
+                    my_dir = head_chars[grid[r, c]]
+                elif grid[r, c] == "X":
+                    opp_pos = (r, c)
+
+        if my_pos is None:
+            return "right"
+
+        DIRS = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
+        delta_to_dir = {v: k for k, v in DIRS.items()}
+        current_dir = delta_to_dir.get(my_dir, "up")
+        opposite = {"up": "down", "down": "up", "left": "right", "right": "left"}
+
+        def bfs_dist(start):
+            if start is None:
+                return {}
+            dist = {start: 0}
+            q = deque([start])
+            while q:
+                r, c = q.popleft()
+                for dr, dc in DIRS.values():
+                    nr, nc = r + dr, c + dc
+                    if (0 <= nr < rows and 0 <= nc < cols
+                            and (nr, nc) not in dist and grid[nr, nc] == " "):
+                        dist[(nr, nc)] = dist[(r, c)] + 1
+                        q.append((nr, nc))
+            return dist
+
+        opp_dist = bfs_dist(opp_pos)
+
         best_move = None
-        best_score = -1
-        
-        for move_name, (dr, dc) in directions.items():
-            # Skip opposite direction (would just continue in current direction)
-            if current_direction and move_name == opposites[current_direction]:
+        best_score = (-1, -1)
+
+        for move_name, (dr, dc) in DIRS.items():
+            if move_name == opposite.get(current_dir, ""):
                 continue
-            
-            # Calculate next position
-            next_row = my_pos[0] + dr
-            next_col = my_pos[1] + dc
-            
-            # Check if move is valid
-            if next_row < 0 or next_row >= grid.shape[0]:
+            nr, nc = my_pos[0] + dr, my_pos[1] + dc
+            if not (0 <= nr < rows and 0 <= nc < cols) or grid[nr, nc] != " ":
                 continue
-            if next_col < 0 or next_col >= grid.shape[1]:
-                continue
-            if grid[next_row, next_col] != ' ':
-                continue
-            
-            # Count reachable spaces from this move
-            score = count_reachable_spaces(next_row, next_col)
-            
+
+            # BFS from next position to measure reachable territory
+            my_from_next = {(nr, nc): 0}
+            q2 = deque([(nr, nc)])
+            while q2:
+                r2, c2 = q2.popleft()
+                for ddr, ddc in DIRS.values():
+                    nnr, nnc = r2 + ddr, c2 + ddc
+                    if (0 <= nnr < rows and 0 <= nnc < cols
+                            and (nnr, nnc) not in my_from_next
+                            and grid[nnr, nnc] == " "):
+                        my_from_next[(nnr, nnc)] = my_from_next[(r2, c2)] + 1
+                        q2.append((nnr, nnc))
+
+            total = len(my_from_next)
+            # Voronoi: count cells I reach before the opponent
+            my_voronoi = sum(
+                1 for pos, d in my_from_next.items()
+                if d < opp_dist.get(pos, 999)
+            )
+            score = (my_voronoi, total)
             if score > best_score:
                 best_score = score
                 best_move = move_name
-        
-        # If no valid move found (shouldn't happen), pick a random valid one
-        if best_move is None:
-            valid_moves = []
-            for move_name, (dr, dc) in directions.items():
-                next_row = my_pos[0] + dr
-                next_col = my_pos[1] + dc
-                if (0 <= next_row < grid.shape[0] and 
-                    0 <= next_col < grid.shape[1] and 
-                    grid[next_row, next_col] == ' '):
-                    valid_moves.append(move_name)
-            
-            if valid_moves:
-                best_move = str(np.random.choice(valid_moves))
-            else:
-                best_move = "right"  # Last resort
-        
 
-        # for the first rounds we set up a set strategy. 
+        if best_move is None:
+            for move_name, (dr, dc) in DIRS.items():
+                nr, nc = my_pos[0] + dr, my_pos[1] + dc
+                if 0 <= nr < rows and 0 <= nc < cols and grid[nr, nc] == " ":
+                    return move_name
+            return "right"
 
         return best_move
 
@@ -281,18 +249,78 @@ class Daniel:
 
         Good luck connecting those dots!
         """
-        # Find all legal moves and pick a random one
-        size = horizontal_lines.shape[1]
-        legal_moves = []
+        size = horizontal_lines.shape[1]  # 5
+
+        def box_sides(r, c):
+            return (int(horizontal_lines[r, c]) + int(horizontal_lines[r + 1, c])
+                    + int(vertical_lines[r, c]) + int(vertical_lines[r, c + 1]))
+
+        def adj_boxes(ori, row, col):
+            boxes = []
+            if ori == "h":
+                if row > 0:    boxes.append((row - 1, col))
+                if row < size: boxes.append((row, col))
+            else:
+                if col > 0:    boxes.append((row, col - 1))
+                if col < size: boxes.append((row, col))
+            return boxes
+
+        def completes(ori, row, col):
+            return any(box_sides(r, c) == 3 for r, c in adj_boxes(ori, row, col))
+
+        def gives_3sided(ori, row, col):
+            return any(box_sides(r, c) == 2 for r, c in adj_boxes(ori, row, col))
+
+        def chain_len(ori, row, col):
+            """Count boxes in the chain opened when we draw this edge."""
+            init = [b for b in adj_boxes(ori, row, col) if box_sides(*b) == 2]
+            visited, stack = set(), list(init)
+            count = 0
+            while stack:
+                b = stack.pop()
+                if b in visited:
+                    continue
+                r, c = b
+                s = box_sides(r, c)
+                if s < 2 or s == 4:
+                    continue
+                visited.add(b)
+                count += 1
+                open_sides = []
+                if not horizontal_lines[r, c]:       open_sides.append(("h", r, c))
+                if not horizontal_lines[r + 1, c]:   open_sides.append(("h", r + 1, c))
+                if not vertical_lines[r, c]:         open_sides.append(("v", r, c))
+                if not vertical_lines[r, c + 1]:     open_sides.append(("v", r, c + 1))
+                for orl, nr, nc in open_sides:
+                    for nb in adj_boxes(orl, nr, nc):
+                        if nb != b and nb not in visited and 2 <= box_sides(*nb) <= 3:
+                            stack.append(nb)
+            return count
+
+        completing, safe, unsafe = [], [], []
+
         for row in range(size + 1):
             for col in range(size):
                 if not horizontal_lines[row, col]:
-                    legal_moves.append({"orientation": "h", "row": row, "col": col})
+                    m = {"orientation": "h", "row": row, "col": col}
+                    if completes("h", row, col):       completing.append(m)
+                    elif gives_3sided("h", row, col):  unsafe.append(m)
+                    else:                              safe.append(m)
+
         for row in range(size):
             for col in range(size + 1):
                 if not vertical_lines[row, col]:
-                    legal_moves.append({"orientation": "v", "row": row, "col": col})
-        return legal_moves[np.random.randint(0, len(legal_moves))]
+                    m = {"orientation": "v", "row": row, "col": col}
+                    if completes("v", row, col):       completing.append(m)
+                    elif gives_3sided("v", row, col):  unsafe.append(m)
+                    else:                              safe.append(m)
+
+        if completing:
+            return completing[0]
+        if safe:
+            return safe[0]
+        unsafe.sort(key=lambda m: chain_len(m["orientation"], m["row"], m["col"]))
+        return unsafe[0]
 
     def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
         """
@@ -443,36 +471,57 @@ class Daniel:
             if len(rows) > 0:
                 on_board[pn] = rows.index[0]
 
-        # Priority 1: finish a piece (land exactly on home index)
+        def dist_to_home(pos):
+            return (home_idx - pos) % board_size
+
+        def opp_progress(idx):
+            """How advanced is the opponent piece at idx — higher means closer to finishing."""
+            sp = board.loc[idx, "space"]
+            if sp is None or str(sp).startswith(self.name + "_"):
+                return 0
+            opp = "_".join(str(sp).split("_")[:-1])
+            opp_homes = board[board["home"] == opp].index
+            if len(opp_homes) == 0:
+                return 0
+            opp_home = opp_homes[0]
+            return board_size - (opp_home - idx) % board_size
+
+        def is_own(idx):
+            sp = board.loc[idx, "space"]
+            return sp is not None and str(sp).startswith(self.name + "_")
+
+        FINISH_SCORE = 100_000
+        CAPTURE_WEIGHT = 60
+        PROGRESS_WEIGHT = 100
+        DEPLOY_BASE = 150
+
+        # Score every legal candidate move
+        candidates = []
+
         for pn, pos in on_board.items():
-            if (pos + dice_roll) % board_size == home_idx:
-                return pn
-
-        # Priority 2: capture an opponent piece
-        for pn in range(1, 5):
-            if pn in finished:
+            new_pos = (pos + dice_roll) % board_size
+            if is_own(new_pos):
+                continue  # blocked by own piece
+            if new_pos == home_idx:
+                candidates.append((pn, FINISH_SCORE))
                 continue
-            if pn in at_home:
-                if dice_roll != 6:
-                    continue
-                target = start_pos
-            elif pn in on_board:
-                target = (on_board[pn] + dice_roll) % board_size
-            else:
-                continue
-            target_space = board.loc[target, "space"]
-            if isinstance(target_space, pd.Series):
-                target_space = target_space.iloc[0]
-            if isinstance(target_space, str) and not target_space.startswith(self.name + "_"):
-                return pn
+            gain = dist_to_home(pos) - dist_to_home(new_pos)
+            cap = opp_progress(new_pos) * CAPTURE_WEIGHT
+            candidates.append((pn, gain * PROGRESS_WEIGHT + cap))
 
-        # Priority 3: deploy from home when dice is 6
-        if dice_roll == 6:
-            for pn in at_home:
-                if pn not in finished:
-                    return pn
+        # Deploy from home on a 6
+        if dice_roll == 6 and at_home:
+            pn = at_home[0]
+            if not is_own(start_pos):
+                cap = opp_progress(start_pos) * CAPTURE_WEIGHT
+                # Slightly less eager to deploy when already 3 pieces on board
+                deploy_score = (DEPLOY_BASE + cap) if len(on_board) < 3 else (50 + cap)
+                candidates.append((pn, deploy_score))
 
-        # Priority 4: fallback — move the first piece that is actually movable
+        if candidates:
+            return max(candidates, key=lambda x: x[1])[0]
+
+        # Fallback: first movable piece
         for pn in range(1, 5):
             if pn in finished:
                 continue
@@ -555,62 +604,247 @@ class Daniel:
 
         Good luck with this extremely logical and strategic game of ROCK PAPER SCISSORS GUN DUCK!
         """
-        # Determine current round number
-        current_round = len(history)
-        
-        # Check if gun is available
-        if len(history) == 0:
-            gun_available = True
-        else:
-            my_reload_timer = history[f"{self.name}_reload_timer"].iloc[-1]
-            # If reload_timer <= 1, gun is available for this round
-            gun_available = my_reload_timer <= 1
-        
-        # Strategy: Use gun on rounds 7, 12, 17, 22, 27... (if available)
-        gun_rounds = {7 + 5*i for i in range(120)}  # Generates {7, 12, 17, 22, 27, ..., 602}
-        
-        if current_round in gun_rounds and gun_available:
-            choice = "g"
-        elif len(history) > 0:
-            # Find opponent's column name
-            opponent_name = None
-            for col in history.columns:
-                if col not in [self.name, f"{self.name}_score", f"{self.name}_reload_timer", 
-                            f"{self.name}_bet", "rounds_remaining"] and \
-                history[col].dtype == 'object':
-                    opponent_name = col
-                    break
-            
-            if opponent_name:
-                opponent_last_move = history[opponent_name].iloc[-1]
-                
-                # Second-order counter logic: beat what beats opponent's last move
-                # (excluding gun from intermediate counters)
-                second_order_responses = {
-                    'r': ['p', 's', 'r'],  # rock -> {d,p} -> {p,s} ∪ {s,r}
-                    'p': ['r'],             # paper -> {s} -> {r}
-                    's': ['d', 'p'],       # scissors -> {r} -> {d,p}
-                    'g': ['p', 's'],       # gun -> {d} -> {p,s}
-                    'd': ['s', 'r']        # duck -> {p,s} -> {s} ∪ {r}
-                }
-                
-                if opponent_last_move in second_order_responses:
-                    possible_moves = second_order_responses[opponent_last_move]
-                    choice = str(np.random.choice(possible_moves))
-                else:
-                    choice = "p"  # Default to duck
-            else:
-                choice = "p"  # Default to duck if can't find opponent
-        else:
-            # First round, default to duck
-            choice = "p"
+        from collections import Counter
 
-        # round 6 should be duck
-        if current_round == 6:
-            choice = "p"
+        my_name = self.name
+        MOVES = ["r", "p", "s", "g", "d"]
+
+        # Expected-value payoff: WIN[(mine, opp)] = +1 win, 0 tie/coinflip, -1 lose
+        WIN = {
+            ("r", "r"): 0,  ("r", "p"): -1, ("r", "s"):  1, ("r", "g"):  0, ("r", "d"): -1,
+            ("p", "r"): 1,  ("p", "p"):  0, ("p", "s"): -1, ("p", "g"): -1, ("p", "d"):  1,
+            ("s", "r"): -1, ("s", "p"):  1, ("s", "s"):  0, ("s", "g"): -1, ("s", "d"):  1,
+            ("g", "r"): 0,  ("g", "p"):  1, ("g", "s"):  1, ("g", "g"):  0, ("g", "d"): -1,
+            ("d", "r"): 1,  ("d", "p"): -1, ("d", "s"): -1, ("d", "g"):  1, ("d", "d"):  0,
+        }
+
+        # Find opponent column name
+        player_cols = [
+            c for c in history.columns
+            if not c.endswith(("_bet", "_score", "_reload_timer"))
+            and c != "rounds_remaining"
+        ]
+        opp_name = next((c for c in player_cols if c != my_name), None)
+
+        # Gun availability, score, rounds remaining
+        can_fire = False
+        my_score = 0
+        opp_can_fire = False
+        rounds_remaining = 399
+
+        if len(history) > 0:
+            last = history.iloc[-1]
+            my_reload = int(last[f"{my_name}_reload_timer"])
+            my_last_move = str(last[my_name])
+            # timer==1 → decrements to 0 this round → can fire
+            # timer==0 and didn't fire last round → still 0 → can fire
+            can_fire = (my_reload == 1) or (my_reload == 0 and my_last_move != "g")
+            my_score = int(last[f"{my_name}_score"])
+            rounds_remaining = int(last["rounds_remaining"])
+            if opp_name:
+                opp_reload = int(last[f"{opp_name}_reload_timer"])
+                opp_last_move = str(last[opp_name])
+                opp_can_fire = (opp_reload == 1) or (opp_reload == 0 and opp_last_move != "g")
+
+        # --- Multi-signal opponent distribution ---
+        opp_global: Counter = Counter()   # overall frequency
+        opp_phase: dict = {}              # keyed by round_index % 6
+        opp_after: dict = {}             # keyed by opponent's last move
+        opp_bigram: dict = {}            # keyed by (prev_prev, prev) opponent moves
+        op_last = op_prev = None
+        n_rounds = len(history)
+
+        if opp_name and n_rounds > 0:
+            opp_seq = [str(m) for m in history[opp_name].values]
+            op_last = opp_seq[-1]
+            op_prev = opp_seq[-2] if n_rounds >= 2 else None
+            for i, m in enumerate(opp_seq):
+                opp_global[m] += 1
+                opp_phase.setdefault(i % 6, Counter())[m] += 1
+                if i > 0:
+                    opp_after.setdefault(opp_seq[i - 1], Counter())[m] += 1
+                if i > 1:
+                    opp_bigram.setdefault((opp_seq[i - 2], opp_seq[i - 1]), Counter())[m] += 1
+
+        def probs(counts: Counter, alpha: float = 1.0) -> dict:
+            total = sum(counts.get(m, 0) for m in MOVES) + alpha * 5
+            return {m: (counts.get(m, 0) + alpha) / total for m in MOVES}
+
+        p_global = probs(opp_global, alpha=2.0)
+        p_phase = probs(opp_phase.get(n_rounds % 6, Counter()), alpha=1.0)
+        p_after = probs(opp_after.get(op_last, Counter()), alpha=1.0) if op_last else {m: 0.2 for m in MOVES}
+        bigram_key = (op_prev, op_last) if op_prev and op_last else None
+        bigram_data = opp_bigram.get(bigram_key, Counter()) if bigram_key else Counter()
+        bigram_n = sum(bigram_data.values())
+        p_bigram = probs(bigram_data, alpha=1.0) if bigram_n >= 5 else {m: 0.2 for m in MOVES}
+
+        # Blend signals: weights increase as data accumulates
+        w_global = 0.35
+        w_phase = 0.15
+        w_after = float(min(0.35, 0.08 + n_rounds / 800))
+        w_bigram = float(min(0.15, bigram_n / 80)) if bigram_n >= 5 else 0.0
+        w_sum = w_global + w_phase + w_after + w_bigram or 1.0
+        op_dist = {
+            m: (w_global * p_global[m] + w_phase * p_phase[m]
+                + w_after * p_after[m] + w_bigram * p_bigram[m]) / w_sum
+            for m in MOVES
+        }
+
+        # Enforce gun feasibility constraint
+        if not opp_can_fire:
+            op_dist["g"] = 0.0
+            non_g = sum(op_dist[m] for m in "rpsd") or 1.0
+            for m in "rpsd":
+                op_dist[m] /= non_g
+        else:
+            # Opponent can fire: boost gun probability
+            hist_rate = opp_global.get("g", 0) / max(sum(opp_global.values()), 1)
+            boosted_g = max(0.6, hist_rate)
+            non_g_total = sum(op_dist[m] for m in "rpsd") or 1.0
+            scale = (1.0 - boosted_g) / non_g_total
+            for m in "rpsd":
+                op_dist[m] *= scale
+            op_dist["g"] = boosted_g
+
+        # --- Softmax action selection (reduces exploitability) ---
+        legal = ["r", "p", "s", "d"]
+        if can_fire:
+            legal.append("g")
+
+        utils = {m: sum(WIN[(m, opp)] * op_dist[opp] for opp in MOVES) for m in legal}
+        tau = max(0.07, 0.3 - n_rounds / 1500)  # temperature cools over game
+        max_u = max(utils.values())
+        weights_sm = {m: float(np.exp((utils[m] - max_u) / tau)) for m in legal}
+        z = sum(weights_sm.values())
+        policy = [weights_sm[m] / z for m in legal]
+        chosen = str(np.random.choice(legal, p=policy))
+
+        # --- Urgency-scaled Kelly betting ---
+        p_win = p_lose = 0.0
+        for opp, p in op_dist.items():
+            wv = WIN.get((chosen, opp), 0)
+            if wv > 0:
+                p_win += p
+            elif wv < 0:
+                p_lose += p
+            else:
+                p_win += 0.5 * p
+                p_lose += 0.5 * p
+
+        edge = p_win - p_lose
+        entropy = -sum(p * np.log(p + 1e-12) for p in op_dist.values()) / np.log(5)
+        confidence = float(np.clip(1.0 - entropy, 0.0, 1.0))
+        max_legal_bet = max(0, int(my_score)) + 2000
+
+        if edge <= 0 or my_score < 0:
+            bet = 0
+        else:
+            urgency = 1.0
+            if rounds_remaining < 60:
+                urgency = 1.4
+            if rounds_remaining < 20:
+                urgency = 2.0
+            raw_bet = max_legal_bet * edge * (0.15 + 0.85 * confidence) * 0.6 * urgency
+            bet = int(np.clip(raw_bet, 0, max_legal_bet))
+
+        return (chosen, bet)
+
         
-        # Conservative betting strategy
-        bet = 100
-        
-        return (choice, bet)
-        # return (str(np.random.choice(["r", "p", "s", "g", "d"])), 100)
+
+    def _minority_update_from_new_round(self, history: pd.DataFrame):
+        current_idx = len(history) - 1
+        if current_idx <= self.minority_last_round_idx:
+            return 
+
+        players = [col for col in history.columns if col != "rounds_remaining"]
+
+        if not self.minority_players:
+            self.minority_players = players
+            for p in players:
+                self.minority_prev_moves[p] = None
+                self.minority_losses[p] = 0
+                self.minority_switches[p] = 0
+                self.minority_last_won[p] = True
+
+        for i in range(self.minority_last_round_idx + 1, current_idx + 1):
+            row = history.iloc[i]
+            choices = row[self.minority_players]
+
+            count_A = (choices == "A").sum()
+            count_B = (choices == "B").sum()
+            if count_A == count_B:
+                minority_choice = None
+            else:
+                minority_choice = "A" if count_A < count_B else "B"
+
+            for player in self.minority_players:
+                move = choices[player]
+                won = (move == minority_choice) if minority_choice else False
+
+                if not self.minority_last_won[player]:
+                    if self.minority_prev_moves[player] is not None and self.minority_prev_moves[player] != move:
+                        self.minority_switches[player] += 1
+                    self.minority_losses[player] += 1
+
+                self.minority_prev_moves[player] = move
+                self.minority_last_won[player] = won
+
+        self.minority_last_round_idx = current_idx
+
+    def minority(self, history: pd.DataFrame) -> Literal["A", "B"]:
+        """
+        In this game you pick between two options: "A" or "B".
+        You are playing against all other players at once.
+        Each round point is granted to all players who choose the option chosen by the fewest nr of players.
+
+        You receive a pandas dataframe representing the history of the game.
+        The dataframe has a column for each player, and in each row the choice of the player in that round:
+
+          dummy1 dummy2 dummy3  rounds_remaining
+        0      B      B      A               4.0
+        1      A      A      A               3.0
+        2      A      B      A               2.0
+        3      B      A      B               1.0
+        4      A      B      B               0.0
+
+        These are dummy names and will be e.g. "ivo" "do" "carlos" in the scoring round.
+        I advise you to deal with these names dynamically, as they are not guaranteed to all be present.
+
+        The score in the example above would be:
+        {'dummy1': 1, 'dummy2': 2, 'dummy3': 1}
+
+        Write a function that returns "A" or "B" based on the current state of the game.
+
+        A full game is always 100 rounds.
+
+        Good luck with this game of social deduction!
+        """
+        if history.empty or len(history) < 2:
+            return np.random.choice(["A", "B"])
+
+        self._minority_update_from_new_round(history)
+
+        predictions = []
+        for player in self.minority_players:
+            last_move = self.minority_prev_moves[player]
+            if last_move is None:
+                predictions.append(np.random.choice(["A", "B"]))
+                continue
+
+            if not self.minority_last_won[player]:
+                loss_count = self.minority_losses[player]
+                switch_count = self.minority_switches[player]
+                switch_rate = switch_count / loss_count if loss_count > 0 else 0.5
+                if switch_rate > 0.6:
+                    predicted = "B" if last_move == "A" else "A"
+                else:
+                    predicted = last_move
+            else:
+                predicted = last_move
+
+            predictions.append(predicted)
+
+        count_A = predictions.count("A")
+        count_B = predictions.count("B")
+
+        return "A" if count_A < count_B else "B"
