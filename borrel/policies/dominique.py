@@ -79,6 +79,12 @@ class Dominique:
                     self_pos = (r, c)
                     self_dir = dir_symbols[ch]
 
+        opp_pos = None
+        for r in range(self.tron_height):
+            for c in range(self.tron_width):
+                if grid[r][c] == "X":
+                    opp_pos = (r, c)
+
         legal_moves = []
         for move, (dr, dc) in self.tron_dirs.items():
             nr, nc = self_pos[0] + dr, self_pos[1] + dc
@@ -88,13 +94,35 @@ class Dominique:
         if not legal_moves:
             return self_dir
 
-        best_move = max(
-            legal_moves,
-            key=lambda move: self._tron_flood_fill_area(
-                self_pos[0] + self.tron_dirs[move][0],
-                self_pos[1] + self.tron_dirs[move][1],
-            ),
-        )
+        best_move = None
+        best_score = -1e18
+        for move in legal_moves:
+            nr = self_pos[0] + self.tron_dirs[move][0]
+            nc = self_pos[1] + self.tron_dirs[move][1]
+            my_area = self._tron_flood_fill_area(nr, nc)
+
+            # Counter-map awareness: avoid trajectories that hand the opponent
+            # clearly larger free space after this exchange.
+            opp_best_area = 0
+            head_distance = 0
+            if opp_pos is not None:
+                head_distance = abs(nr - opp_pos[0]) + abs(nc - opp_pos[1])
+                for odr, odc in self.tron_dirs.values():
+                    orow, ocol = opp_pos[0] + odr, opp_pos[1] + odc
+                    if self._tron_is_safe(orow, ocol):
+                        opp_best_area = max(
+                            opp_best_area, self._tron_flood_fill_area(orow, ocol)
+                        )
+
+            score = (
+                1.0 * my_area
+                - 0.35 * opp_best_area
+                + 0.45 * head_distance
+                + float(np.random.uniform(0.0, 1e-3))
+            )
+            if score > best_score:
+                best_score = score
+                best_move = move
 
         return best_move
 
@@ -294,6 +322,10 @@ class Dominique:
             return best
 
         moves = legal_moves(horizontal_lines, vertical_lines)
+        lines_remaining = int(np.size(horizontal_lines) + np.size(vertical_lines)) - int(
+            np.sum(horizontal_lines) + np.sum(vertical_lines)
+        )
+        endgame_pressure = max(0.0, (20.0 - float(lines_remaining)) / 20.0)
         if not moves:
             return {"orientation": "h", "row": 0, "col": 0}
 
@@ -314,8 +346,8 @@ class Dominique:
                 thirds = gives_third_side(horizontal_lines, vertical_lines, m)
                 score = (
                     500.0 * now
-                    - 180.0 * opp_take
-                    - 40.0 * thirds
+                    - (180.0 + 100.0 * endgame_pressure) * opp_take
+                    - (40.0 + 15.0 * endgame_pressure) * thirds
                     + float(np.random.uniform(0, 1e-3))
                 )
                 if score > best_score:
@@ -339,6 +371,11 @@ class Dominique:
             nh, nv = apply_move(horizontal_lines, vertical_lines, m)
             opp_take = opponent_best_take(nh, nv)
             thirds = gives_third_side(horizontal_lines, vertical_lines, m)
+            future_safe = sum(
+                1
+                for mv2 in legal_moves(nh, nv)
+                if gives_third_side(nh, nv, mv2) == 0
+            )
 
             # Prefer central edges early; many standard bots overvalue this,
             # but only after tactical safety checks.
@@ -348,8 +385,9 @@ class Dominique:
                 center_dist = abs(m["row"] - (size - 1) / 2) + abs(m["col"] - size / 2)
 
             score = (
-                -260.0 * opp_take
-                - 70.0 * thirds
+                -(260.0 + 140.0 * endgame_pressure) * opp_take
+                - (70.0 + 40.0 * endgame_pressure) * thirds
+                + 1.5 * future_safe
                 - 2.0 * center_dist
                 + float(np.random.uniform(0, 1e-3))
             )
@@ -539,12 +577,15 @@ class Dominique:
         ) -> float:
             not_captured_prob = 1.0
             for positions in opp_positions.values():
-                capture_rolls = {
-                    (target_idx - pos) % board_len
-                    for pos in positions
-                    if 1 <= (target_idx - pos) % board_len <= 6
-                }
-                p_capture = min(1.0, len(capture_rolls) / 6.0)
+                p_capture = 0.0
+                for pos in positions:
+                    d = (target_idx - pos) % board_len
+                    if 1 <= d <= 6:
+                        p_capture += 1.0 / 6.0
+                    elif 7 <= d <= 10:
+                        # Light two-turn pressure signal for better medium-term safety.
+                        p_capture += 0.08
+                p_capture = min(1.0, p_capture)
                 not_captured_prob *= 1.0 - p_capture
             return 1.0 - not_captured_prob
 
@@ -556,8 +597,17 @@ class Dominique:
 
         pieces_on_board_count = len(my_on_board)
         my_finished = len(info["pieces_finished"][self.name])
+        opp_best_finished = max(
+            (
+                len(info["pieces_finished"].get(player, []))
+                for player in info["pieces_finished"].keys()
+                if player != self.name
+            ),
+            default=0,
+        )
         best_piece = movable[0]
         best_score = -1e18
+        evaluations: list[dict] = []
 
         for piece_nr in movable:
             from_home = piece_nr in at_home and piece_nr not in my_on_board
@@ -615,6 +665,10 @@ class Dominique:
                     if from_home:
                         score += 1200.0
 
+                    # If we are behind in finished pieces, prioritize disruption.
+                    if my_finished < opp_best_finished:
+                        score += 450.0
+
             # Risk evaluation after hypothetical move.
             if not finishing_move:
                 opp_after = build_opp_positions(exclude_piece=removed_piece)
@@ -629,12 +683,47 @@ class Dominique:
                     risk_now = capture_risk_probability(current_idx, opp_now)
                     score += 170.0 * (risk_now - risk_after)
 
+                # When ahead in the race, preserve board position more strongly.
+                if my_finished > opp_best_finished:
+                    score -= 140.0 * risk_after
+            else:
+                risk_after = 0.0
+
             # Tiny jitter to prevent deterministic mirrors.
             score += float(np.random.uniform(0.0, 1e-3))
 
             if score > best_score:
                 best_score = score
                 best_piece = piece_nr
+
+            evaluations.append(
+                {
+                    "piece": piece_nr,
+                    "score": score,
+                    "finishing": finishing_move,
+                    "risk": float(risk_after),
+                    "from_home": from_home,
+                    "dist_after": 0 if finishing_move else dist_to_home(self.name, target_idx),
+                }
+            )
+
+        tied = [
+            ev
+            for ev in evaluations
+            if abs(float(ev["score"]) - float(best_score)) <= 2.0
+        ]
+        if len(tied) > 1:
+            tied.sort(
+                key=lambda ev: (
+                    1 if ev["finishing"] else 0,
+                    -ev["risk"],
+                    0 if ev["from_home"] else 1,
+                    -ev["dist_after"],
+                    float(np.random.uniform(0.0, 1e-6)),
+                ),
+                reverse=True,
+            )
+            best_piece = int(tied[0]["piece"])
 
         return int(best_piece)
 
@@ -881,7 +970,16 @@ class Dominique:
         }
 
         # Stochastic action selection keeps us less exploitable.
-        tau = max(0.08, 0.35 - st["round"] / 1800)
+        opponent_entropy = -sum(p * np.log(p + 1e-12) for p in op_dist.values()) / np.log(
+            5
+        )
+        tau_floor = 0.18 if opponent_entropy > 0.75 else 0.12
+        tau = max(tau_floor, 0.35 - st["round"] / 1800)
+
+        if "g" in utilities:
+            # Suppress predictable panic-shots into likely duck/gun counters.
+            utilities["g"] -= 0.35 * op_dist.get("d", 0.0) + 0.20 * op_dist.get("g", 0.0)
+
         max_u = max(utilities.values())
         weights = {m: np.exp((utilities[m] - max_u) / tau) for m in legal_moves}
         z = sum(weights.values())
@@ -918,6 +1016,18 @@ class Dominique:
                 urgency = 1.35
             if rounds_remaining < 15:
                 urgency = 1.7
+
+            # Controlled comeback mode after repeated recent losses.
+            if len(history) >= 3:
+                recent_payoffs = []
+                max_back = min(5, len(history))
+                for i in range(1, max_back + 1):
+                    my_prev = str(history.iloc[-i][self.name])
+                    op_prev = str(history.iloc[-i][opp_name])
+                    recent_payoffs.append(round_payoff(my_prev, op_prev))
+                loss_streak = sum(1 for p in recent_payoffs if p < 0)
+                if loss_streak >= 3:
+                    urgency *= 1.35
 
             raw_bet = max_legal_bet * edge * (0.15 + 0.85 * confidence) * 0.55 * urgency
             bet = int(np.clip(raw_bet, 0, max_legal_bet))
