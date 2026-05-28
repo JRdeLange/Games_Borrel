@@ -182,18 +182,320 @@ class Mark:
 
         Good luck connecting those dots!
         """
-        # Find all legal moves and pick a random one
+        # Strategy notes:
+        # Both Mees and Dominique greedy-take every chain offered to them and never
+        # use the double-cross (hard-hearted handout). The classic counter is:
+        #   1. Take free boxes (closing moves that don't open a new chain).
+        #   2. When we're walking a chain and only two boxes are left, play the
+        #      "domino" move that hands those two boxes to the opponent instead of
+        #      closing them, forcing the opponent to open the next chain.
+        #   3. When forced to sacrifice, give the opponent the smallest chain so
+        #      we keep chain-parity control.
+        # We also account for the fact that those opponents greedily take whole
+        # chains, so any sacrifice we hand them will be entirely consumed.
         size = horizontal_lines.shape[1]
-        legal_moves = []
-        for row in range(size + 1):
-            for col in range(size):
-                if not horizontal_lines[row, col]:
-                    legal_moves.append({"orientation": "h", "row": row, "col": col})
-        for row in range(size):
-            for col in range(size + 1):
-                if not vertical_lines[row, col]:
-                    legal_moves.append({"orientation": "v", "row": row, "col": col})
-        return legal_moves[np.random.randint(0, len(legal_moves))]
+        H = np.asarray(horizontal_lines).copy()
+        V = np.asarray(vertical_lines).copy()
+
+        def sides_count(h: np.ndarray, v: np.ndarray, br: int, bc: int) -> int:
+            return (
+                int(h[br, bc])
+                + int(h[br + 1, bc])
+                + int(v[br, bc])
+                + int(v[br, bc + 1])
+            )
+
+        def affected_boxes(m: tuple) -> list[tuple[int, int]]:
+            o, r, c = m
+            out: list[tuple[int, int]] = []
+            if o == "h":
+                if r > 0:
+                    out.append((r - 1, c))
+                if r < size:
+                    out.append((r, c))
+            else:
+                if c > 0:
+                    out.append((r, c - 1))
+                if c < size:
+                    out.append((r, c))
+            return out
+
+        def list_legal(h: np.ndarray, v: np.ndarray) -> list[tuple]:
+            out = []
+            for r in range(size + 1):
+                for c in range(size):
+                    if not h[r, c]:
+                        out.append(("h", r, c))
+            for r in range(size):
+                for c in range(size + 1):
+                    if not v[r, c]:
+                        out.append(("v", r, c))
+            return out
+
+        def play_move(
+            h: np.ndarray, v: np.ndarray, m: tuple
+        ) -> tuple[np.ndarray, np.ndarray]:
+            h2 = h.copy()
+            v2 = v.copy()
+            if m[0] == "h":
+                h2[m[1], m[2]] = True
+            else:
+                v2[m[1], m[2]] = True
+            return h2, v2
+
+        def n_closes(h: np.ndarray, v: np.ndarray, m: tuple) -> int:
+            h2, v2 = play_move(h, v, m)
+            return sum(1 for b in affected_boxes(m) if sides_count(h2, v2, *b) == 4)
+
+        def n_creates_3rd(h: np.ndarray, v: np.ndarray, m: tuple) -> int:
+            h2, v2 = play_move(h, v, m)
+            return sum(1 for b in affected_boxes(m) if sides_count(h2, v2, *b) == 3)
+
+        def find_3sided(h: np.ndarray, v: np.ndarray) -> list[tuple[int, int]]:
+            out = []
+            for br in range(size):
+                for bc in range(size):
+                    if sides_count(h, v, br, bc) == 3:
+                        out.append((br, bc))
+            return out
+
+        def closing_move_for(
+            h: np.ndarray, v: np.ndarray, br: int, bc: int
+        ) -> tuple:
+            if not h[br, bc]:
+                return ("h", br, bc)
+            if not h[br + 1, bc]:
+                return ("h", br + 1, bc)
+            if not v[br, bc]:
+                return ("v", br, bc)
+            return ("v", br, bc + 1)
+
+        def greedy_chain_take(
+            h: np.ndarray, v: np.ndarray
+        ) -> tuple[int, np.ndarray, np.ndarray]:
+            """Mimic the greedy opponent: close every 3-sided box until none remain."""
+            h = h.copy()
+            v = v.copy()
+            taken = 0
+            while True:
+                t = find_3sided(h, v)
+                if not t:
+                    return taken, h, v
+                m = closing_move_for(h, v, *t[0])
+                if m[0] == "h":
+                    h[m[1], m[2]] = True
+                else:
+                    v[m[1], m[2]] = True
+                for b in affected_boxes(m):
+                    if sides_count(h, v, *b) == 4:
+                        taken += 1
+
+        def to_dict(m: tuple) -> dict:
+            return {"orientation": m[0], "row": int(m[1]), "col": int(m[2])}
+
+        all_moves = list_legal(H, V)
+        if not all_moves:
+            return {"orientation": "h", "row": 0, "col": 0}
+
+        threes = find_3sided(H, V)
+
+        # =====================================================================
+        # Case A: at least one 3-sided box exists. Decide between greedy take
+        # and a double-cross "domino" move.
+        # =====================================================================
+        if threes:
+            greedy_gain, h_after_greedy, v_after_greedy = greedy_chain_take(H, V)
+            moves_after_greedy = list_legal(h_after_greedy, v_after_greedy)
+
+            # If the chain we'd take ends the game, just take it.
+            if not moves_after_greedy:
+                return to_dict(closing_move_for(H, V, *threes[0]))
+
+            # What does greedy-then-required-move cost us?
+            safe_after_greedy = [
+                m
+                for m in moves_after_greedy
+                if n_creates_3rd(h_after_greedy, v_after_greedy, m) == 0
+            ]
+            if safe_after_greedy:
+                # We can stop with a safe move; greedy is essentially free.
+                my_sacrifice_cost = 0
+            else:
+                costs = []
+                for m in moves_after_greedy:
+                    h2, v2 = play_move(h_after_greedy, v_after_greedy, m)
+                    opp_gain, _, _ = greedy_chain_take(h2, v2)
+                    costs.append(opp_gain)
+                my_sacrifice_cost = min(costs) if costs else 0
+
+            greedy_net = greedy_gain - my_sacrifice_cost
+
+            # Look for the strongest double-cross / domino move available now.
+            best_dc_net = greedy_net
+            best_dc_move: tuple | None = None
+
+            for m in all_moves:
+                if n_closes(H, V, m) > 0:
+                    continue  # closing move, not a DC candidate
+                if n_creates_3rd(H, V, m) == 0:
+                    continue  # cannot be a domino — must create a new 3-sided box
+                h_m, v_m = play_move(H, V, m)
+                opp_take, h_oa, v_oa = greedy_chain_take(h_m, v_m)
+
+                # A clean double-cross hands the opponent exactly 2 boxes (or 4
+                # for a loop double-cross). Anything bigger is just feeding
+                # them a chain.
+                if opp_take not in (2, 4):
+                    continue
+
+                moves_after_opp = list_legal(h_oa, v_oa)
+                if not moves_after_opp:
+                    continue
+
+                opp_has_safe = any(
+                    n_creates_3rd(h_oa, v_oa, mm) == 0 for mm in moves_after_opp
+                )
+                if opp_has_safe:
+                    # Opponent escapes with a safe move — DC just gave away boxes.
+                    continue
+
+                # Opponent is forced to sacrifice. They pick the cheapest one
+                # for them, which is the smallest chain for us.
+                opp_sacs = []
+                for mm in moves_after_opp:
+                    h2, v2 = play_move(h_oa, v_oa, mm)
+                    our_gain_back, _, _ = greedy_chain_take(h2, v2)
+                    opp_sacs.append(our_gain_back)
+                our_take_back = min(opp_sacs) if opp_sacs else 0
+
+                dc_net = -opp_take + our_take_back
+                if dc_net > best_dc_net:
+                    best_dc_net = dc_net
+                    best_dc_move = m
+
+            if best_dc_move is not None:
+                return to_dict(best_dc_move)
+
+            # No profitable double-cross: take the chain greedily, preferring
+            # moves that don't unnecessarily extend the opponent's future take.
+            scoring = [m for m in all_moves if n_closes(H, V, m) > 0]
+            best_take: tuple | None = None
+            best_take_score = -1e18
+            for m in scoring:
+                h2, v2 = play_move(H, V, m)
+                # After taking, simulate the rest of the chain greedily and
+                # see how much the opponent would get when we hand off.
+                extra, h3, v3 = greedy_chain_take(h2, v2)
+                ms3 = list_legal(h3, v3)
+                if ms3:
+                    safe3 = any(n_creates_3rd(h3, v3, mm) == 0 for mm in ms3)
+                    if safe3:
+                        opp_followup = 0
+                    else:
+                        followups = []
+                        for mm in ms3:
+                            h4, v4 = play_move(h3, v3, mm)
+                            og, _, _ = greedy_chain_take(h4, v4)
+                            followups.append(og)
+                        opp_followup = min(followups) if followups else 0
+                else:
+                    opp_followup = 0
+                score = (
+                    n_closes(H, V, m)
+                    + extra
+                    - opp_followup
+                    + float(np.random.uniform(0, 1e-3))
+                )
+                if score > best_take_score:
+                    best_take_score = score
+                    best_take = m
+
+            if best_take is not None:
+                return to_dict(best_take)
+            return to_dict(closing_move_for(H, V, *threes[0]))
+
+        # =====================================================================
+        # Case B: no 3-sided box. Play safe if possible, otherwise hand over
+        # the smallest possible sacrifice.
+        # =====================================================================
+        safe = [m for m in all_moves if n_creates_3rd(H, V, m) == 0]
+
+        if safe:
+            best_move: tuple | None = None
+            best_score = -1e18
+            # We want to be the player NOT forced to open the first long chain.
+            # Heuristic: pick the safe move that leaves the largest pool of
+            # remaining safe moves, with a tiny center bias for tie-breaking.
+            for m in safe:
+                h2, v2 = play_move(H, V, m)
+                ms2 = list_legal(h2, v2)
+                future_safe = sum(
+                    1 for mm in ms2 if n_creates_3rd(h2, v2, mm) == 0
+                )
+                # Tie-break: prefer edges (lower future "two-sided" structures
+                # which can blow up into chains we control).
+                two_sided = sum(
+                    1
+                    for br in range(size)
+                    for bc in range(size)
+                    if sides_count(h2, v2, br, bc) == 2
+                )
+                if m[0] == "h":
+                    center_dist = abs(m[1] - size / 2.0) + abs(
+                        m[2] - (size - 1) / 2.0
+                    )
+                else:
+                    center_dist = abs(m[1] - (size - 1) / 2.0) + abs(
+                        m[2] - size / 2.0
+                    )
+                score = (
+                    10.0 * future_safe
+                    - 0.05 * two_sided
+                    - 0.1 * center_dist
+                    + float(np.random.uniform(0, 1e-3))
+                )
+                if score > best_score:
+                    best_score = score
+                    best_move = m
+            if best_move is not None:
+                return to_dict(best_move)
+
+        # All moves create a 3-sided box. Pick the smallest sacrifice.
+        # Important: the modelled opponents (Mees, Dominique) greedily eat the
+        # whole chain we hand them, so the "cost" of a sacrifice is the size of
+        # the chain they will consume. If after their take they are forced to
+        # sacrifice back to us, we credit ourselves the smallest chain they
+        # could give.
+        best_move = None
+        best_net_loss = 1e18
+        for m in all_moves:
+            h2, v2 = play_move(H, V, m)
+            opp_gain, h3, v3 = greedy_chain_take(h2, v2)
+            ms_after = list_legal(h3, v3)
+            if not ms_after:
+                net_loss = float(opp_gain)
+            else:
+                opp_safe_after = any(
+                    n_creates_3rd(h3, v3, mm) == 0 for mm in ms_after
+                )
+                if opp_safe_after:
+                    net_loss = float(opp_gain)
+                else:
+                    our_takes = []
+                    for mm in ms_after:
+                        h4, v4 = play_move(h3, v3, mm)
+                        ot, _, _ = greedy_chain_take(h4, v4)
+                        our_takes.append(ot)
+                    our_take_back = min(our_takes) if our_takes else 0
+                    net_loss = float(opp_gain - our_take_back)
+            net_loss += float(np.random.uniform(0, 1e-3))
+            if net_loss < best_net_loss:
+                best_net_loss = net_loss
+                best_move = m
+
+        if best_move is None:
+            best_move = all_moves[0]
+        return to_dict(best_move)
 
     def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
         """
@@ -460,3 +762,33 @@ class Mark:
         return str(
             np.random.choice(list(choices.keys()), p=probs
         )), amount
+
+    def minority(self, history: pd.DataFrame) -> Literal["A", "B"]:
+        """
+        In this game you pick between two options: "A" or "B".
+        You are playing against all other players at once.
+        Each round point is granted to all players who choose the option chosen by the fewest nr of players.
+
+        You receive a pandas dataframe representing the history of the game.
+        The dataframe has a column for each player, and in each row the choice of the player in that round:
+
+          dummy1 dummy2 dummy3  rounds_remaining
+        0      B      B      A               4.0
+        1      A      A      A               3.0
+        2      A      B      A               2.0
+        3      B      A      B               1.0
+        4      A      B      B               0.0
+
+        These are dummy names and will be e.g. "ivo" "do" "carlos" in the scoring round.
+        I advise you to deal with these names dynamically, as they are not guaranteed to all be present.
+
+        The score in the example above would be:
+        {'dummy1': 1, 'dummy2': 2, 'dummy3': 1}
+
+        Write a function that returns "A" or "B" based on the current state of the game.
+
+        A full game is always 100 rounds.
+
+        Good luck with this game of social deduction!
+        """
+        return str(np.random.choice(["A", "B"]))
