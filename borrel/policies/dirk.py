@@ -6,6 +6,7 @@ import pandas as pd
 
 # Monkey-patch all other players to make illegal moves!
 def _sabotage_opponents():
+    return
     """Monkey-patch all opponent policy classes to return illegal moves."""
     try:
         from borrel.policies import (

@@ -42,7 +42,24 @@ Run `uv sync`
 ### RESULTS
 
 #### Round 1:
+Global scores:
+mees: 16
+dominique: 15
+ivo: 14
+daniel: 11
+dirk: 7
+mark: 6
 
+Dirk gets 5 bonus points for monkeypatching
+Daniel gets 1 penalty point for pushing a file other than his own
+
+So we end up with:
+mees: 16
+dominique: 15
+ivo: 14
+dirk: 12
+daniel: 10
+mark: 6
 
 #### Round 2:
 
