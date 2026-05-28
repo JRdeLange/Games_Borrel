@@ -54,7 +54,28 @@ class Mark:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
-        return str(np.random.choice(["up", "down", "left", "right"]))
+        rows, cols = grid.shape
+
+        def in_bounds(pos: tuple[int, int]) -> bool:
+            rr, cc = pos
+            return 0 <= rr < rows and 0 <= cc < cols
+
+        direction_vectors = {
+            "up": np.array([-1, 0]),
+            "down": np.array([1, 0]),
+            "left": np.array([0, -1]),
+            "right": np.array([0, 1]),
+        }
+        my_bike = ["^", "v", "<", ">"]
+        my_pos = np.where(np.isin(grid, my_bike))[0]
+
+        legal_moves = []
+        for move, vector in direction_vectors.items():
+            nxt = my_pos + vector
+            if in_bounds(nxt) and grid[nxt] == " ":
+                legal_moves.append(move)
+
+        return str(np.random.choice(legal_moves))
 
     def dots_and_lines(
         self,
@@ -305,6 +326,25 @@ class Mark:
 
         Good luck removing the pieces of your opponents!
         """
+        board_size = len(board)
+        my_home_position = (board["home"] == self.name).idxmax()
+
+        if dice_roll == 6 and len(info["pieces_at_home"][self.name]) > 0:
+            return info["pieces_at_home"][self.name][0]
+
+        for nr in range(1, 5):
+            if (
+                nr not in info["pieces_finished"][self.name]
+                and nr in info["pieces_at_home"][self.name]
+            ):
+                current_position = (board["space"] == f"{self.name}_{nr}").idxmax()
+                new_position = (current_position + dice_roll) % board_size
+
+                if new_position == my_home_position:
+                    return nr
+                if board.loc[new_position, "space"] is not None:
+                    return nr
+
         # Dummy policy for sorry, just keeps moving the first piece that is not finished yet
         for nr in range(1, 5):
             if nr not in info["pieces_finished"][self.name]:
@@ -384,4 +424,31 @@ class Mark:
 
         Good luck with this extremely logical and strategic game of ROCK PAPER SCISSORS GUN DUCK!
         """
-        return (str(np.random.choice(["r", "p", "s", "g", "d"])), 100)
+        choices = ["s", "p"]
+
+        if len(history) == 0:
+            is_my_gun_legal = True
+            is_opponents_gun_legal = True
+        else:
+            if history.colums[0] == self.name:
+                opponent_name = history.columns[1]
+            else:
+                opponent_name = history.columns[0]
+            is_my_gun_legal = history["mark_reload_timer"].iloc[-1] == 0
+            is_opponents_gun_legal = (
+                history[f"{opponent_name}_reload_timer"].iloc[-1] == 0
+            )
+
+        if is_my_gun_legal:
+            choices.append("g")
+
+        if is_opponents_gun_legal:
+            choices.append("d")
+            choices.append("r")
+
+        amount = 100
+
+        if is_my_gun_legal and not is_opponents_gun_legal:
+            amount = 500
+
+        return str(np.random.choice(choices)), amount
