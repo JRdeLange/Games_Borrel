@@ -56,12 +56,11 @@ class Mees:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
-        from collections import deque
-
         head_chars = {">": (0, 1), "<": (0, -1), "^": (-1, 0), "v": (1, 0)}
-        my_pos = opp_pos = my_dir = None
+        DIRS = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
         rows, cols = grid.shape
 
+        my_pos = opp_pos = my_dir = None
         for r in range(rows):
             for c in range(cols):
                 ch = grid[r, c]
@@ -70,61 +69,81 @@ class Mees:
                 elif ch == "X":
                     opp_pos = (r, c)
 
-        DIRS = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
         opposite = (-my_dir[0], -my_dir[1])
 
-        def bfs_from(start):
-            dist = {start: 0}
-            q = deque([start])
-            while q:
-                r, c = q.popleft()
-                for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                    nr, nc = r + dr, c + dc
-                    npos = (nr, nc)
-                    if (
-                        0 <= nr < rows
-                        and 0 <= nc < cols
-                        and npos not in dist
-                        and grid[nr, nc] == " "
-                    ):
-                        dist[npos] = dist[(r, c)] + 1
-                        q.append(npos)
-            return dist
+        def _open(r, c):
+            return 0 <= r < rows and 0 <= c < cols and grid[r, c] == " "
 
-        opp_dist = bfs_from(opp_pos) if opp_pos is not None else {}
+        def voronoi_territory(my_start, opp_start):
+            """Level-by-level simultaneous BFS Voronoi from both next positions."""
+            my_claimed = {my_start}
+            opp_claimed = {opp_start}
+            my_front = [my_start]
+            opp_front = [opp_start]
+            while my_front or opp_front:
+                next_my = []
+                for r, c in my_front:
+                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                        nr, nc = r + dr, c + dc
+                        if _open(nr, nc) and (nr, nc) not in my_claimed and (nr, nc) not in opp_claimed:
+                            my_claimed.add((nr, nc))
+                            next_my.append((nr, nc))
+                next_opp = []
+                for r, c in opp_front:
+                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                        nr, nc = r + dr, c + dc
+                        if _open(nr, nc) and (nr, nc) not in opp_claimed and (nr, nc) not in my_claimed:
+                            opp_claimed.add((nr, nc))
+                            next_opp.append((nr, nc))
+                my_front = next_my
+                opp_front = next_opp
+            return len(my_claimed), len(opp_claimed)
 
-        best_move = None
-        best_score = (-1, -1)
-
+        # Our legal next positions
+        my_moves = []
         for move_name, (dr, dc) in DIRS.items():
             if (dr, dc) == opposite:
                 continue
             nr, nc = my_pos[0] + dr, my_pos[1] + dc
-            if not (0 <= nr < rows and 0 <= nc < cols):
-                continue
-            if grid[nr, nc] != " ":
-                continue
+            if _open(nr, nc):
+                my_moves.append((move_name, nr, nc))
 
-            my_dist = bfs_from((nr, nc))
-            my_territory = sum(
-                1
-                for pos, d in my_dist.items()
-                if pos not in opp_dist or d <= opp_dist[pos]
-            )
-            opp_territory = sum(
-                1
-                for pos, d in opp_dist.items()
-                if pos not in my_dist or d < my_dist[pos]
-            )
-            score = (my_territory, -opp_territory)
+        if not my_moves:
+            return cast(Literal["up", "down", "left", "right"],
+                        next(m for m, d in DIRS.items() if d != opposite))
+
+        # Opponent's legal next positions
+        opp_nexts = []
+        if opp_pos is not None:
+            for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nr, nc = opp_pos[0] + dr, opp_pos[1] + dc
+                if _open(nr, nc):
+                    opp_nexts.append((nr, nc))
+        if not opp_nexts and opp_pos is not None:
+            opp_nexts = [opp_pos]
+
+        best_move = my_moves[0][0]
+        best_score = -1e18
+
+        for move_name, my_nr, my_nc in my_moves:
+            territories = []
+            for opp_nr, opp_nc in opp_nexts:
+                if (my_nr, my_nc) == (opp_nr, opp_nc):
+                    territories.append(0)  # head-on collision: we die
+                    continue
+                my_t, _ = voronoi_territory((my_nr, my_nc), (opp_nr, opp_nc))
+                territories.append(my_t)
+
+            min_t = min(territories)
+            avg_t = sum(territories) / len(territories)
+            head_dist = (abs(my_nr - opp_pos[0]) + abs(my_nc - opp_pos[1])) if opp_pos else 0
+
+            # Blend worst-case and average; small head-distance bonus avoids early collisions
+            score = 0.4 * min_t + 0.6 * avg_t + 0.3 * head_dist
             if score > best_score:
                 best_score = score
                 best_move = move_name
 
-        if best_move is None:
-            for move_name, (dr, dc) in DIRS.items():
-                if (dr, dc) != opposite:
-                    return cast(Literal["up", "down", "left", "right"], move_name)
         return cast(Literal["up", "down", "left", "right"], best_move)
 
     def dots_and_lines(
@@ -467,6 +486,142 @@ class Mees:
         threshold = len(opp_names) / 2.0
         noise = np.random.normal(0.0, 0.4)
         return "A" if predicted_A_opps + noise < threshold else "B"
+
+    def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
+        home_idx = board[board["home"] == self.name].index[0]
+        board_length = len(board)
+        at_home = info["pieces_at_home"][self.name]
+        finished = info["pieces_finished"][self.name]
+        start_pos = (home_idx + 1) % board_length
+
+        my_on_board = {
+            int(str(board.loc[i, "space"]).split("_")[-1]): i
+            for i in board.index
+            if board.loc[i, "space"] is not None
+            and str(board.loc[i, "space"]).startswith(self.name + "_")
+        }
+
+        opp_home_map = {
+            p: board[board["home"] == p].index[0]
+            for p in info["pieces_at_home"].keys()
+            if p != self.name
+        }
+
+        def dist_to_home(player_home_idx, pos):
+            return (player_home_idx - pos) % board_length
+
+        def is_own(idx):
+            sp = board.loc[idx, "space"]
+            return sp is not None and str(sp).startswith(self.name + "_")
+
+        def build_opp_positions(exclude_piece=None):
+            out = {p: [] for p in opp_home_map}
+            for i in board.index:
+                sp = board.loc[i, "space"]
+                if sp is None:
+                    continue
+                piece_name = str(sp)
+                if exclude_piece is not None and piece_name == exclude_piece:
+                    continue
+                owner = "_".join(piece_name.split("_")[:-1])
+                if owner in out:
+                    out[owner].append(i)
+            return out
+
+        def capture_risk_probability(target_idx, opp_positions):
+            not_captured = 1.0
+            for positions in opp_positions.values():
+                rolls_that_hit = sum(
+                    1 for pos in positions
+                    if 1 <= (target_idx - pos) % board_length <= 6
+                )
+                p_cap = min(1.0, rolls_that_hit / 6.0)
+                not_captured *= 1.0 - p_cap
+            return 1.0 - not_captured
+
+        FINISH_SCORE = 100_000
+        my_finished_count = len(finished)
+        candidates = []
+
+        for pn, pos in my_on_board.items():
+            new_pos = (pos + dice_roll) % board_length
+            if is_own(new_pos):
+                continue
+
+            score = 0.0
+            target_sp = board.loc[new_pos, "space"]
+            target_home = board.loc[new_pos, "home"]
+            removed_piece = None
+
+            if target_home == self.name:
+                score += FINISH_SCORE
+                if my_finished_count == 3:
+                    score += 35_000.0
+                candidates.append((pn, score))
+                continue
+
+            before = dist_to_home(home_idx, pos)
+            after = dist_to_home(home_idx, new_pos)
+            score += 50.0 * (before - after)
+
+            if target_sp is not None and not str(target_sp).startswith(self.name + "_"):
+                piece_name = str(target_sp)
+                removed_piece = piece_name
+                owner = "_".join(piece_name.split("_")[:-1])
+                opp_home = opp_home_map.get(owner, 0)
+                opp_dist = dist_to_home(opp_home, new_pos)
+                opp_fin = len(info["pieces_finished"].get(owner, []))
+                score += 1500.0 + 60.0 * (board_length - opp_dist) + 330.0 * opp_fin
+                if opp_dist <= 6:
+                    score += 900.0
+                if opp_fin >= 3:
+                    score += 1500.0
+
+            opp_after = build_opp_positions(exclude_piece=removed_piece)
+            risk_after = capture_risk_probability(new_pos, opp_after)
+            my_value = board_length - dist_to_home(home_idx, new_pos)
+            score -= risk_after * (260.0 + 42.0 * my_value)
+
+            opp_now = build_opp_positions()
+            risk_now = capture_risk_probability(pos, opp_now)
+            score += 170.0 * (risk_now - risk_after)
+
+            score += float(np.random.uniform(0.0, 1e-3))
+            candidates.append((pn, score))
+
+        if dice_roll == 6 and at_home:
+            pn = at_home[0]
+            if not is_own(start_pos):
+                score = 260.0 if len(my_on_board) < 2 else 110.0
+                target_sp = board.loc[start_pos, "space"]
+                removed_piece = None
+                if target_sp is not None and not str(target_sp).startswith(self.name + "_"):
+                    piece_name = str(target_sp)
+                    removed_piece = piece_name
+                    owner = "_".join(piece_name.split("_")[:-1])
+                    opp_home = opp_home_map.get(owner, 0)
+                    opp_dist = dist_to_home(opp_home, start_pos)
+                    opp_fin = len(info["pieces_finished"].get(owner, []))
+                    score += 1500.0 + 60.0 * (board_length - opp_dist) + 330.0 * opp_fin
+                    if opp_dist <= 6:
+                        score += 900.0
+                    if opp_fin >= 3:
+                        score += 1500.0
+                opp_after = build_opp_positions(exclude_piece=removed_piece)
+                risk_after = capture_risk_probability(start_pos, opp_after)
+                my_value = board_length - dist_to_home(home_idx, start_pos)
+                score -= risk_after * (260.0 + 42.0 * my_value)
+                score += float(np.random.uniform(0.0, 1e-3))
+                candidates.append((pn, score))
+
+        if candidates:
+            return max(candidates, key=lambda x: x[1])[0]
+
+        for pn in range(1, 5):
+            if pn not in finished:
+                if pn in my_on_board or (dice_roll == 6 and pn in at_home):
+                    return pn
+        return 1
 
     def rps_gun(
         self, history: pd.DataFrame
