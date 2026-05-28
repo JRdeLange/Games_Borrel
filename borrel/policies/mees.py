@@ -16,7 +16,9 @@ class Mees:
 
         # Markov transition table for rps_gun: context -> Counter of opponent's next move.
         # Keys are 1-grams (last opp move) and 2-grams (tuple of last 2 opp moves).
-        from collections import defaultdict, Counter as _Counter
+        from collections import Counter as _Counter
+        from collections import defaultdict
+
         self._rps_markov: dict = defaultdict(lambda: _Counter())
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
@@ -110,11 +112,13 @@ class Mees:
 
             my_dist = bfs_from((nr, nc))
             my_territory = sum(
-                1 for pos, d in my_dist.items()
+                1
+                for pos, d in my_dist.items()
                 if pos not in opp_dist or d <= opp_dist[pos]
             )
             opp_territory = sum(
-                1 for pos, d in opp_dist.items()
+                1
+                for pos, d in opp_dist.items()
                 if pos not in my_dist or d < my_dist[pos]
             )
             score = (my_territory, -opp_territory)
@@ -233,8 +237,12 @@ class Mees:
         size = horizontal_lines.shape[1]
 
         def box_sides(r, c):
-            return (int(horizontal_lines[r, c]) + int(horizontal_lines[r + 1, c]) +
-                    int(vertical_lines[r, c]) + int(vertical_lines[r, c + 1]))
+            return (
+                int(horizontal_lines[r, c])
+                + int(horizontal_lines[r + 1, c])
+                + int(vertical_lines[r, c])
+                + int(vertical_lines[r, c + 1])
+            )
 
         def adjacent_boxes(orient, r, c):
             if orient == "h":
@@ -243,10 +251,14 @@ class Mees:
                 return ([(r, c - 1)] if c > 0 else []) + ([(r, c)] if c < size else [])
 
         def would_complete(orient, r, c):
-            return any(box_sides(br, bc) == 3 for br, bc in adjacent_boxes(orient, r, c))
+            return any(
+                box_sides(br, bc) == 3 for br, bc in adjacent_boxes(orient, r, c)
+            )
 
         def would_create_3sided(orient, r, c):
-            return any(box_sides(br, bc) == 2 for br, bc in adjacent_boxes(orient, r, c))
+            return any(
+                box_sides(br, bc) == 2 for br, bc in adjacent_boxes(orient, r, c)
+            )
 
         def simulate_opp_capture(orient, r, c):
             hl = horizontal_lines.copy()
@@ -257,7 +269,12 @@ class Mees:
                 vl[r, c] = True
 
             def sides(br, bc):
-                return int(hl[br, bc]) + int(hl[br + 1, bc]) + int(vl[br, bc]) + int(vl[br, bc + 1])
+                return (
+                    int(hl[br, bc])
+                    + int(hl[br + 1, bc])
+                    + int(vl[br, bc])
+                    + int(vl[br, bc + 1])
+                )
 
             total = 0
             changed = True
@@ -278,8 +295,18 @@ class Mees:
                             changed = True
             return total
 
-        legal_h = [(r, c) for r in range(size + 1) for c in range(size) if not horizontal_lines[r, c]]
-        legal_v = [(r, c) for r in range(size) for c in range(size + 1) if not vertical_lines[r, c]]
+        legal_h = [
+            (r, c)
+            for r in range(size + 1)
+            for c in range(size)
+            if not horizontal_lines[r, c]
+        ]
+        legal_v = [
+            (r, c)
+            for r in range(size)
+            for c in range(size + 1)
+            if not vertical_lines[r, c]
+        ]
 
         # 1. Complete any available box immediately
         for r, c in legal_h:
@@ -297,7 +324,9 @@ class Mees:
             return {"orientation": orient, "row": r, "col": c}
 
         # 3. All moves are dangerous — give away the shortest chain
-        all_moves = [("h", r, c) for r, c in legal_h] + [("v", r, c) for r, c in legal_v]
+        all_moves = [("h", r, c) for r, c in legal_h] + [
+            ("v", r, c) for r, c in legal_v
+        ]
         best = min(all_moves, key=lambda m: simulate_opp_capture(*m))
         return {"orientation": best[0], "row": best[1], "col": best[2]}
 
@@ -571,11 +600,31 @@ class Mees:
         """
         # Expected value matrix: WIN[(my, opp)] = 1 win / -1 lose / 0 tie-or-coinflip
         WIN = {
-            ("r", "r"): 0,  ("r", "p"): -1, ("r", "s"): 1,  ("r", "g"): 0,  ("r", "d"): -1,
-            ("p", "r"): 1,  ("p", "p"): 0,  ("p", "s"): -1, ("p", "g"): -1, ("p", "d"): 1,
-            ("s", "r"): -1, ("s", "p"): 1,  ("s", "s"): 0,  ("s", "g"): -1, ("s", "d"): 1,
-            ("g", "r"): 0,  ("g", "p"): 1,  ("g", "s"): 1,  ("g", "g"): 0,  ("g", "d"): -1,
-            ("d", "r"): 1,  ("d", "p"): -1, ("d", "s"): -1, ("d", "g"): 1,  ("d", "d"): 0,
+            ("r", "r"): 0,
+            ("r", "p"): -1,
+            ("r", "s"): 1,
+            ("r", "g"): 0,
+            ("r", "d"): -1,
+            ("p", "r"): 1,
+            ("p", "p"): 0,
+            ("p", "s"): -1,
+            ("p", "g"): -1,
+            ("p", "d"): 1,
+            ("s", "r"): -1,
+            ("s", "p"): 1,
+            ("s", "s"): 0,
+            ("s", "g"): -1,
+            ("s", "d"): 1,
+            ("g", "r"): 0,
+            ("g", "p"): 1,
+            ("g", "s"): 1,
+            ("g", "g"): 0,
+            ("g", "d"): -1,
+            ("d", "r"): 1,
+            ("d", "p"): -1,
+            ("d", "s"): -1,
+            ("d", "g"): 1,
+            ("d", "d"): 0,
         }
 
         if len(history) == 0:
@@ -596,7 +645,9 @@ class Mees:
 
         # Timer shown in history is AFTER decrement for that round, BEFORE shooting.
         can_gun = (my_last_timer == 1) or (my_last_timer == 0 and my_last_choice != "g")
-        opp_can_gun = (opp_last_timer == 1) or (opp_last_timer == 0 and opp_last_choice != "g")
+        opp_can_gun = (opp_last_timer == 1) or (
+            opp_last_timer == 0 and opp_last_choice != "g"
+        )
 
         my_score = int(last[self.name + "_score"])
 
@@ -637,6 +688,7 @@ class Mees:
         else:
             # Try Markov predictions in order of specificity: 2-gram, 1-gram, flat recent.
             from collections import Counter
+
             predicted: dict | None = None
             pred_weight = 0
 
