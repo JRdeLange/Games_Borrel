@@ -56,6 +56,7 @@ class Daniel:
         """
         my_pos = None
         current_direction = None
+
         
         for i in range(grid.shape[0]):
             for j in range(grid.shape[1]):
@@ -172,9 +173,11 @@ class Daniel:
             else:
                 best_move = "right"  # Last resort
         
+
+        # for the first rounds we set up a set strategy. 
+
         return best_move
 
-        return str(np.random.choice(["up", "down", "left", "right"]))
 
     def dots_and_lines(
         self,
@@ -425,80 +428,61 @@ class Daniel:
 
         Good luck removing the pieces of your opponents!
         """
-        # Find our home position to calculate starting position
-        our_home_row = board[board["home"] == self.name]
-        our_home_index = our_home_row.index
-        starting_position = (our_home_index + 1) % len(board)
-        
-        
+        home_idx = board[board["home"] == self.name].index[0]
         board_size = len(board)
-        # first check whether a piece can finish by moving it from its current position with the current dice roll to exactly the home position. If so, move that piece.
-        for piece_nr in range(1, 5):
-            # Skip finished pieces
-            if piece_nr in info["pieces_finished"][self.name]:
-                continue
-            
-            if piece_nr in info["pieces_at_home"][self.name]:
-                continue
-            # piece is not finished, check if it can be moved to home
-            # Piece is on the board, find its current position
-            piece_name = f"{self.name}_{piece_nr}"
-            piece_rows = board[board["space"] == piece_name]
-            current_position = piece_rows.index
-            target_position = (current_position + dice_roll) % board_size
-                
-            
-            # Check if target position is home position
-            if target_position == our_home_index:
-                return piece_nr
+        start_pos = (home_idx + 1) % board_size
+        at_home = info["pieces_at_home"][self.name]
+        finished = info["pieces_finished"][self.name]
 
-        
-        # Check each piece (1-4) to see if it can capture an opponent
-        for piece_nr in range(1, 5):
-            # Skip finished pieces
-            if piece_nr in info["pieces_finished"][self.name]:
+        # Build map of piece_nr -> board position for pieces currently on the board
+        on_board = {}
+        for pn in range(1, 5):
+            if pn in finished or pn in at_home:
                 continue
-            
-            target_position = None
-            
-            # Check if piece is at home
-            if piece_nr in info["pieces_at_home"][self.name]:
-                # Can only place if dice_roll is 6
-                if dice_roll == 6 and starting_position is not None:
-                    target_position = starting_position
-            else:
-                # Piece is on the board, find its current position
-                piece_name = f"{self.name}_{piece_nr}"
-                piece_rows = board[board["space"] == piece_name]
-                current_position = piece_rows.index[0]
-                target_position = (current_position + dice_roll) % board_size
-            
-            # Check if target position has an opponent piece
-            target_space = board.loc[target_position, "space"]
-            # If there's an opponent piece at target, capture it!
-            if target_space is not None and not target_space.startswith(self.name):
-                return piece_nr
-        
-        # No captures available, if dice roll is 6, try to move a piece from home if possible
-        if dice_roll == 6:
-            for piece_nr in info["pieces_at_home"][self.name]:
-                if piece_nr in info["pieces_finished"][self.name]:
+            rows = board[board["space"] == f"{self.name}_{pn}"]
+            if len(rows) > 0:
+                on_board[pn] = rows.index[0]
+
+        # Priority 1: finish a piece (land exactly on home index)
+        for pn, pos in on_board.items():
+            if (pos + dice_roll) % board_size == home_idx:
+                return pn
+
+        # Priority 2: capture an opponent piece
+        for pn in range(1, 5):
+            if pn in finished:
+                continue
+            if pn in at_home:
+                if dice_roll != 6:
                     continue
-                return piece_nr
+                target = start_pos
+            elif pn in on_board:
+                target = (on_board[pn] + dice_roll) % board_size
+            else:
+                continue
+            target_space = board.loc[target, "space"]
+            if isinstance(target_space, pd.Series):
+                target_space = target_space.iloc[0]
+            if isinstance(target_space, str) and not target_space.startswith(self.name + "_"):
+                return pn
 
-        for nr in range(1, 5):
-            if nr not in info["pieces_finished"][self.name]:
-                return nr
-        
-        return 1
+        # Priority 3: deploy from home when dice is 6
+        if dice_roll == 6:
+            for pn in at_home:
+                if pn not in finished:
+                    return pn
 
-        # Dummy policy for sorry, just keeps moving the first piece that is not finished yet
-        for nr in range(1, 5):
-            if nr not in info["pieces_finished"][self.name]:
-                return nr
+        # Priority 4: fallback — move the first piece that is actually movable
+        for pn in range(1, 5):
+            if pn in finished:
+                continue
+            if pn in on_board:
+                return pn
+            if pn in at_home and dice_roll == 6:
+                return pn
 
-        return 1
-
+        return 1  # nothing movable; game engine will handle it
+    
     def rps_gun(
         self, history: pd.DataFrame
     ) -> tuple[Literal["r", "p", "s", "g", "d"], int]:
@@ -582,8 +566,8 @@ class Daniel:
             # If reload_timer <= 1, gun is available for this round
             gun_available = my_reload_timer <= 1
         
-        # Strategy: Use gun on rounds 6, 11, 16, 21, 26... (if available)
-        gun_rounds = {6 + 5*i for i in range(120)}  # Generates {6, 11, 16, 21, 26, ..., 601}
+        # Strategy: Use gun on rounds 7, 12, 17, 22, 27... (if available)
+        gun_rounds = {7 + 5*i for i in range(120)}  # Generates {7, 12, 17, 22, 27, ..., 602}
         
         if current_round in gun_rounds and gun_available:
             choice = "g"
@@ -614,16 +598,16 @@ class Daniel:
                     possible_moves = second_order_responses[opponent_last_move]
                     choice = str(np.random.choice(possible_moves))
                 else:
-                    choice = "d"  # Default to duck
+                    choice = "p"  # Default to duck
             else:
-                choice = "d"  # Default to duck if can't find opponent
+                choice = "p"  # Default to duck if can't find opponent
         else:
             # First round, default to duck
-            choice = "d"
+            choice = "p"
 
         # round 6 should be duck
         if current_round == 6:
-            choice = "d"
+            choice = "p"
         
         # Conservative betting strategy
         bet = 100
