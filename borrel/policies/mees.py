@@ -437,6 +437,9 @@ class Mees:
         """
         home_idx = board[board["home"] == self.name].index[0]
         board_length = len(board)
+        at_home = info["pieces_at_home"][self.name]
+        finished = info["pieces_finished"][self.name]
+        start_pos = (home_idx + 1) % board_length
 
         my_on_board = {
             int(str(board.loc[i, "space"]).split("_")[-1]): i
@@ -444,55 +447,52 @@ class Mees:
             if board.loc[i, "space"] is not None
             and str(board.loc[i, "space"]).startswith(self.name + "_")
         }
-        at_home = info["pieces_at_home"][self.name]
-        start_pos = (home_idx + 1) % board_length
 
-        def dist_to_finish(pos):
+        def dist_to_home(pos):
             return (home_idx - pos) % board_length
 
-        def target(pos):
-            return (pos + dice_roll) % board_length
-
-        def space_at(idx):
-            return board.loc[idx, "space"]
-
         def is_own(idx):
-            sp = space_at(idx)
+            sp = board.loc[idx, "space"]
             return sp is not None and str(sp).startswith(self.name + "_")
 
-        def opp_value(idx):
-            sp = space_at(idx)
+        def opp_progress(idx):
+            sp = board.loc[idx, "space"]
             if sp is None or str(sp).startswith(self.name + "_"):
                 return 0
-            opp_name = "_".join(str(sp).split("_")[:-1])
-            opp_home = board[board["home"] == opp_name].index[0]
+            opp = "_".join(str(sp).split("_")[:-1])
+            opp_home = board[board["home"] == opp].index[0]
             return board_length - (opp_home - idx) % board_length
+
+        FINISH_SCORE = 100_000
+        PROGRESS_WEIGHT = 100
+        CAPTURE_WEIGHT = 50
+        DEPLOY_BASE = 150
 
         candidates = []
 
         for pn, pos in my_on_board.items():
-            t = target(pos)
-            if dist_to_finish(pos) == dice_roll:
-                candidates.append((pn, 2000))
-            elif opp_value(t) > 0:
-                candidates.append((pn, 800 + opp_value(t) * 10))
-            elif not is_own(t):
-                progress = board_length - dist_to_finish(pos)
-                candidates.append((pn, 100 + progress * 2))
+            new_pos = (pos + dice_roll) % board_length
+            if is_own(new_pos):
+                continue  # would send own piece home — skip
+            if dist_to_home(pos) == dice_roll:
+                candidates.append((pn, FINISH_SCORE))
+                continue
+            # Gain = reduction in steps to home; negative when overshooting
+            gain = dist_to_home(pos) - dist_to_home(new_pos)
+            cap = opp_progress(new_pos) * CAPTURE_WEIGHT
+            candidates.append((pn, gain * PROGRESS_WEIGHT + cap))
 
         if dice_roll == 6 and at_home:
             pn = at_home[0]
-            ov = opp_value(start_pos)
-            if ov > 0:
-                candidates.append((pn, 800 + ov * 10))
-            elif not is_own(start_pos):
-                candidates.append((pn, 150))
+            if not is_own(start_pos):
+                cap = opp_progress(start_pos) * CAPTURE_WEIGHT
+                candidates.append((pn, DEPLOY_BASE + cap))
 
         if candidates:
             return max(candidates, key=lambda x: x[1])[0]
 
         for pn in range(1, 5):
-            if pn not in info["pieces_finished"][self.name]:
+            if pn not in finished:
                 if pn in my_on_board or (dice_roll == 6 and pn in at_home):
                     return pn
         return 1
