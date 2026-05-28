@@ -67,15 +67,18 @@ class Mark:
             "right": np.array([0, 1]),
         }
         my_bike = ["^", "v", "<", ">"]
-        my_pos = np.where(np.isin(grid, my_bike))[0]
+        my_pos = np.asarray(np.where(np.isin(grid, my_bike))).flatten()
 
         legal_moves = []
         for move, vector in direction_vectors.items():
             nxt = my_pos + vector
-            if in_bounds(nxt) and grid[nxt] == " ":
+            if in_bounds(nxt) and grid[tuple(nxt)] == " ":
                 legal_moves.append(move)
 
-        return str(np.random.choice(legal_moves))
+        try:
+            return str(np.random.choice(legal_moves))
+        except:
+            return "up"
 
     def dots_and_lines(
         self,
@@ -335,7 +338,7 @@ class Mark:
         for nr in range(1, 5):
             if (
                 nr not in info["pieces_finished"][self.name]
-                and nr in info["pieces_at_home"][self.name]
+                and nr not in info["pieces_at_home"][self.name]
             ):
                 current_position = (board["space"] == f"{self.name}_{nr}").idxmax()
                 new_position = (current_position + dice_roll) % board_size
@@ -424,13 +427,13 @@ class Mark:
 
         Good luck with this extremely logical and strategic game of ROCK PAPER SCISSORS GUN DUCK!
         """
-        choices = ["s", "p"]
+        choices = {"s": 1, "p": 1, "r": 0.5}
 
         if len(history) == 0:
-            is_my_gun_legal = True
-            is_opponents_gun_legal = True
+            is_my_gun_legal = False
+            is_opponents_gun_legal = False
         else:
-            if history.colums[0] == self.name:
+            if history.columns[0] == self.name:
                 opponent_name = history.columns[1]
             else:
                 opponent_name = history.columns[0]
@@ -440,15 +443,20 @@ class Mark:
             )
 
         if is_my_gun_legal:
-            choices.append("g")
+            choices["g"] = 2
 
         if is_opponents_gun_legal:
-            choices.append("d")
-            choices.append("r")
+            choices["d"] = 0.5
+            choices["r"] += 1
 
         amount = 100
 
         if is_my_gun_legal and not is_opponents_gun_legal:
             amount = 500
 
-        return str(np.random.choice(choices)), amount
+        probs = np.array(list(choices.values()))
+        probs /= probs.sum()
+
+        return str(
+            np.random.choice(list(choices.keys()), p=probs
+        )), amount
