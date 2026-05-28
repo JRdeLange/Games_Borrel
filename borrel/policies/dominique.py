@@ -11,14 +11,122 @@ class Dominique:
         # NOTE: DO NOT TOUCH!
         self.name = name  # NOTE: DO NOT TOUCH!
         # NOTE: DO NOT TOUCH!
-
+        self.minority_last_round_idx = -1
+        self.minority_players = []
+        self.minority_prev_moves = {}
+        self.minority_losses = {}
+        self.minority_switches = {}
+        self.minority_last_won = {}
         # Feel free to store whatever you want here.
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
-        
+
         # Anti-reverse-engineering: vary strategy per-game instance
-        self._strategy_mode = int(np.random.choice([0, 1, 2])) % 3  # 0=aggressive, 1=balanced, 2=defensive
+        self._strategy_mode = (
+            int(np.random.choice([0, 1, 2])) % 3
+        )  # 0=aggressive, 1=balanced, 2=defensive
         self._game_seed = int(np.random.randint(0, 2**31))
+
+    def _minority_update_from_new_round(self, history: pd.DataFrame):
+        current_idx = len(history) - 1
+        if current_idx <= self.minority_last_round_idx:
+            return
+
+        players = [col for col in history.columns if col != "rounds_remaining"]
+
+        if not self.minority_players:
+            self.minority_players = players
+            for p in players:
+                self.minority_prev_moves[p] = None
+                self.minority_losses[p] = 0
+                self.minority_switches[p] = 0
+                self.minority_last_won[p] = True
+
+        for i in range(self.minority_last_round_idx + 1, current_idx + 1):
+            row = history.iloc[i]
+            choices = row[self.minority_players]
+
+            count_A = (choices == "A").sum()
+            count_B = (choices == "B").sum()
+            if count_A == count_B:
+                minority_choice = None
+            else:
+                minority_choice = "A" if count_A < count_B else "B"
+
+            for player in self.minority_players:
+                move = choices[player]
+                won = (move == minority_choice) if minority_choice else False
+
+                if not self.minority_last_won[player]:
+                    if (
+                        self.minority_prev_moves[player] is not None
+                        and self.minority_prev_moves[player] != move
+                    ):
+                        self.minority_switches[player] += 1
+                    self.minority_losses[player] += 1
+
+                self.minority_prev_moves[player] = move
+                self.minority_last_won[player] = won
+
+        self.minority_last_round_idx = current_idx
+
+    def minority(self, history: pd.DataFrame) -> Literal["A", "B"]:
+        """
+        In this game you pick between two options: "A" or "B".
+        You are playing against all other players at once.
+        Each round point is granted to all players who choose the option chosen by the fewest nr of players.
+
+        You receive a pandas dataframe representing the history of the game.
+        The dataframe has a column for each player, and in each row the choice of the player in that round:
+
+          dummy1 dummy2 dummy3  rounds_remaining
+        0      B      B      A               4.0
+        1      A      A      A               3.0
+        2      A      B      A               2.0
+        3      B      A      B               1.0
+        4      A      B      B               0.0
+
+        These are dummy names and will be e.g. "ivo" "do" "carlos" in the scoring round.
+        I advise you to deal with these names dynamically, as they are not guaranteed to all be present.
+
+        The score in the example above would be:
+        {'dummy1': 1, 'dummy2': 2, 'dummy3': 1}
+
+        Write a function that returns "A" or "B" based on the current state of the game.
+
+        A full game is always 100 rounds.
+
+        Good luck with this game of social deduction!
+        """
+        if history.empty or len(history) < 2:
+            return np.random.choice(["A", "B"])
+
+        self._minority_update_from_new_round(history)
+
+        predictions = []
+        for player in self.minority_players:
+            last_move = self.minority_prev_moves[player]
+            if last_move is None:
+                predictions.append(np.random.choice(["A", "B"]))
+                continue
+
+            if not self.minority_last_won[player]:
+                loss_count = self.minority_losses[player]
+                switch_count = self.minority_switches[player]
+                switch_rate = switch_count / loss_count if loss_count > 0 else 0.5
+                if switch_rate > 0.6:
+                    predicted = "B" if last_move == "A" else "A"
+                else:
+                    predicted = last_move
+            else:
+                predicted = last_move
+
+            predictions.append(predicted)
+
+        count_A = predictions.count("A")
+        count_B = predictions.count("B")
+
+        return "A" if count_A < count_B else "B"
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
@@ -100,12 +208,12 @@ class Dominique:
 
         best_move = None
         best_score = -1e18
-        
+
         # Strategy mixing: occasionally play defensive/unpredictable to confuse pattern learners
         use_aggressive = (self._strategy_mode == 0) or (
             self._strategy_mode == 1 and np.random.rand() > 0.25
         )
-        
+
         for move in legal_moves:
             nr = self_pos[0] + self.tron_dirs[move][0]
             nc = self_pos[1] + self.tron_dirs[move][1]
@@ -140,7 +248,7 @@ class Dominique:
                     + 0.7 * head_distance
                     + float(np.random.uniform(0.0, 1e-2))
                 )
-            
+
             if score > best_score:
                 best_score = score
                 best_move = move
@@ -343,9 +451,9 @@ class Dominique:
             return best
 
         moves = legal_moves(horizontal_lines, vertical_lines)
-        lines_remaining = int(np.size(horizontal_lines) + np.size(vertical_lines)) - int(
-            np.sum(horizontal_lines) + np.sum(vertical_lines)
-        )
+        lines_remaining = int(
+            np.size(horizontal_lines) + np.size(vertical_lines)
+        ) - int(np.sum(horizontal_lines) + np.sum(vertical_lines))
         endgame_pressure = max(0.0, (20.0 - float(lines_remaining)) / 20.0)
         if not moves:
             return {"orientation": "h", "row": 0, "col": 0}
@@ -359,12 +467,18 @@ class Dominique:
         if scoring:
             best_move = None
             best_score = -1e18
-            
+
             # Anti-reverse-engineering: randomize weight emphasis per-game
-            w_now = 500.0 + (50.0 if self._strategy_mode == 0 else -30.0 if self._strategy_mode == 2 else 0)
+            w_now = 500.0 + (
+                50.0
+                if self._strategy_mode == 0
+                else -30.0
+                if self._strategy_mode == 2
+                else 0
+            )
             w_opp = 180.0 + 100.0 * endgame_pressure
             w_thirds = 40.0 + 15.0 * endgame_pressure
-            
+
             for m in scoring:
                 now = immediate_boxes_closed(horizontal_lines, vertical_lines, m)
                 nh, nv = apply_move(horizontal_lines, vertical_lines, m)
@@ -394,22 +508,25 @@ class Dominique:
         # then secondarily limits creation of 3-sided boxes and preserves flexibility.
         best_move = None
         best_score = -1e18
-        
+
         # Per-game weight variance to avoid pattern exploitation
-        rng_seed_offset = hash(tuple([self._game_seed, len(horizontal_lines), len(vertical_lines)])) % 100
-        w_opp_base = 260.0 + 140.0 * endgame_pressure + (rng_seed_offset % 20 - 10) * 0.5
+        rng_seed_offset = (
+            hash(tuple([self._game_seed, len(horizontal_lines), len(vertical_lines)]))
+            % 100
+        )
+        w_opp_base = (
+            260.0 + 140.0 * endgame_pressure + (rng_seed_offset % 20 - 10) * 0.5
+        )
         w_thirds_base = 70.0 + 40.0 * endgame_pressure
         w_future = 1.5 + (rng_seed_offset % 10 - 5) * 0.1
         w_center = 2.0 + (rng_seed_offset % 5 - 2.5) * 0.1
-        
+
         for m in candidate_moves:
             nh, nv = apply_move(horizontal_lines, vertical_lines, m)
             opp_take = opponent_best_take(nh, nv)
             thirds = gives_third_side(horizontal_lines, vertical_lines, m)
             future_safe = sum(
-                1
-                for mv2 in legal_moves(nh, nv)
-                if gives_third_side(nh, nv, mv2) == 0
+                1 for mv2 in legal_moves(nh, nv) if gives_third_side(nh, nv, mv2) == 0
             )
 
             # Prefer central edges early; many standard bots overvalue this,
@@ -643,7 +760,7 @@ class Dominique:
         best_piece = movable[0]
         best_score = -1e18
         evaluations: list[dict] = []
-        
+
         # Anti-reverse-engineering: occasional suboptimal play to confuse opponents
         # who learned old patterns
         should_play_deceptive = self._strategy_mode == 2 and np.random.rand() < 0.15
@@ -742,7 +859,9 @@ class Dominique:
                     "finishing": finishing_move,
                     "risk": float(risk_after),
                     "from_home": from_home,
-                    "dist_after": 0 if finishing_move else dist_to_home(self.name, target_idx),
+                    "dist_after": 0
+                    if finishing_move
+                    else dist_to_home(self.name, target_idx),
                 }
             )
 
@@ -763,11 +882,13 @@ class Dominique:
                 reverse=True,
             )
             best_piece = int(tied[0]["piece"])
-        
+
         # Deceptive play: occasionally pick a suboptimal piece to be unpredictable
         if should_play_deceptive and len(evaluations) > 2:
             # Pick second-best to confuse pattern learners
-            sorted_evals = sorted(evaluations, key=lambda ev: float(ev["score"]), reverse=True)
+            sorted_evals = sorted(
+                evaluations, key=lambda ev: float(ev["score"]), reverse=True
+            )
             if len(sorted_evals) > 1:
                 best_piece = int(sorted_evals[1]["piece"])
 
@@ -1016,12 +1137,14 @@ class Dominique:
         }
 
         # Stochastic action selection keeps us less exploitable.
-        opponent_entropy = -sum(p * np.log(p + 1e-12) for p in op_dist.values()) / np.log(
-            5
-        )
-        
+        opponent_entropy = -sum(
+            p * np.log(p + 1e-12) for p in op_dist.values()
+        ) / np.log(5)
+
         # Anti-reverse-engineering: randomize tau floor per-instance
-        tau_base = 0.12 + (self._strategy_mode == 0) * 0.05 + (self._strategy_mode == 2) * 0.08
+        tau_base = (
+            0.12 + (self._strategy_mode == 0) * 0.05 + (self._strategy_mode == 2) * 0.08
+        )
         tau_floor = tau_base if opponent_entropy > 0.75 else max(0.06, tau_base - 0.03)
         tau = max(tau_floor, 0.35 - st["round"] / 1800)
 
@@ -1029,7 +1152,9 @@ class Dominique:
             # Suppress predictable panic-shots into likely duck/gun counters.
             # But occasionally ignore this to look unpredictable
             if np.random.rand() > 0.2 or self._strategy_mode != 2:
-                utilities["g"] -= 0.35 * op_dist.get("d", 0.0) + 0.20 * op_dist.get("g", 0.0)
+                utilities["g"] -= 0.35 * op_dist.get("d", 0.0) + 0.20 * op_dist.get(
+                    "g", 0.0
+                )
 
         max_u = max(utilities.values())
         weights = {m: np.exp((utilities[m] - max_u) / tau) for m in legal_moves}
@@ -1079,12 +1204,22 @@ class Dominique:
                 loss_streak = sum(1 for p in recent_payoffs if p < 0)
                 if loss_streak >= 3:
                     urgency *= 1.35
-            
+
             # Anti-reverse-engineering: randomized bet multiplier per instance
-            bet_multiplier = 0.55 + (self._strategy_mode == 0) * 0.08 - (self._strategy_mode == 2) * 0.10
+            bet_multiplier = (
+                0.55
+                + (self._strategy_mode == 0) * 0.08
+                - (self._strategy_mode == 2) * 0.10
+            )
             bet_multiplier += np.random.uniform(-0.05, 0.05)  # Constant noise
 
-            raw_bet = max_legal_bet * edge * (0.15 + 0.85 * confidence) * bet_multiplier * urgency
+            raw_bet = (
+                max_legal_bet
+                * edge
+                * (0.15 + 0.85 * confidence)
+                * bet_multiplier
+                * urgency
+            )
             bet = int(np.clip(raw_bet, 0, max_legal_bet))
 
         if chosen_move == "g":

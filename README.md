@@ -73,6 +73,25 @@ dirk: 3
 4 bonus points for Daniel
 
 #### Round 3:
+Global scores:
+ivo: 11
+mees: 11
+daniel: 10
+mark: 8
+dominique: 6
 
+Doubled scores:
+ivo: 22
+mees: 22
+daniel: 20
+mark: 16
+dominique: 12
 
 #### Total:
+mees: 49
+ivo: 46
+daniel: 40
+dominique: 38
+mark: 26
+dirk: 15
+
