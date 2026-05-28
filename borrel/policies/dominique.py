@@ -15,6 +15,10 @@ class Dominique:
         # Feel free to store whatever you want here.
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
+        
+        # Anti-reverse-engineering: vary strategy per-game instance
+        self._strategy_mode = int(np.random.choice([0, 1, 2])) % 3  # 0=aggressive, 1=balanced, 2=defensive
+        self._game_seed = int(np.random.randint(0, 2**31))
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
@@ -96,6 +100,12 @@ class Dominique:
 
         best_move = None
         best_score = -1e18
+        
+        # Strategy mixing: occasionally play defensive/unpredictable to confuse pattern learners
+        use_aggressive = (self._strategy_mode == 0) or (
+            self._strategy_mode == 1 and np.random.rand() > 0.25
+        )
+        
         for move in legal_moves:
             nr = self_pos[0] + self.tron_dirs[move][0]
             nc = self_pos[1] + self.tron_dirs[move][1]
@@ -114,12 +124,23 @@ class Dominique:
                             opp_best_area, self._tron_flood_fill_area(orow, ocol)
                         )
 
-            score = (
-                1.0 * my_area
-                - 0.35 * opp_best_area
-                + 0.45 * head_distance
-                + float(np.random.uniform(0.0, 1e-3))
-            )
+            # Adaptive weighting based on strategy mode
+            if use_aggressive:
+                score = (
+                    1.0 * my_area
+                    - 0.35 * opp_best_area
+                    + 0.45 * head_distance
+                    + float(np.random.uniform(0.0, 1e-3))
+                )
+            else:
+                # Defensive: prioritize safety and distance over pure area
+                score = (
+                    0.5 * my_area
+                    - 0.5 * opp_best_area
+                    + 0.7 * head_distance
+                    + float(np.random.uniform(0.0, 1e-2))
+                )
+            
             if score > best_score:
                 best_score = score
                 best_move = move
@@ -338,6 +359,12 @@ class Dominique:
         if scoring:
             best_move = None
             best_score = -1e18
+            
+            # Anti-reverse-engineering: randomize weight emphasis per-game
+            w_now = 500.0 + (50.0 if self._strategy_mode == 0 else -30.0 if self._strategy_mode == 2 else 0)
+            w_opp = 180.0 + 100.0 * endgame_pressure
+            w_thirds = 40.0 + 15.0 * endgame_pressure
+            
             for m in scoring:
                 now = immediate_boxes_closed(horizontal_lines, vertical_lines, m)
                 nh, nv = apply_move(horizontal_lines, vertical_lines, m)
@@ -345,10 +372,10 @@ class Dominique:
                 opp_take = opponent_best_take(nh, nv)
                 thirds = gives_third_side(horizontal_lines, vertical_lines, m)
                 score = (
-                    500.0 * now
-                    - (180.0 + 100.0 * endgame_pressure) * opp_take
-                    - (40.0 + 15.0 * endgame_pressure) * thirds
-                    + float(np.random.uniform(0, 1e-3))
+                    w_now * now
+                    - w_opp * opp_take
+                    - w_thirds * thirds
+                    + float(np.random.uniform(0, 1e-2))  # Increased variance
                 )
                 if score > best_score:
                     best_score = score
@@ -367,6 +394,14 @@ class Dominique:
         # then secondarily limits creation of 3-sided boxes and preserves flexibility.
         best_move = None
         best_score = -1e18
+        
+        # Per-game weight variance to avoid pattern exploitation
+        rng_seed_offset = hash(tuple([self._game_seed, len(horizontal_lines), len(vertical_lines)])) % 100
+        w_opp_base = 260.0 + 140.0 * endgame_pressure + (rng_seed_offset % 20 - 10) * 0.5
+        w_thirds_base = 70.0 + 40.0 * endgame_pressure
+        w_future = 1.5 + (rng_seed_offset % 10 - 5) * 0.1
+        w_center = 2.0 + (rng_seed_offset % 5 - 2.5) * 0.1
+        
         for m in candidate_moves:
             nh, nv = apply_move(horizontal_lines, vertical_lines, m)
             opp_take = opponent_best_take(nh, nv)
@@ -385,11 +420,11 @@ class Dominique:
                 center_dist = abs(m["row"] - (size - 1) / 2) + abs(m["col"] - size / 2)
 
             score = (
-                -(260.0 + 140.0 * endgame_pressure) * opp_take
-                - (70.0 + 40.0 * endgame_pressure) * thirds
-                + 1.5 * future_safe
-                - 2.0 * center_dist
-                + float(np.random.uniform(0, 1e-3))
+                -w_opp_base * opp_take
+                - w_thirds_base * thirds
+                + w_future * future_safe
+                - w_center * center_dist
+                + float(np.random.uniform(0, 1e-2))
             )
             if score > best_score:
                 best_score = score
@@ -608,6 +643,10 @@ class Dominique:
         best_piece = movable[0]
         best_score = -1e18
         evaluations: list[dict] = []
+        
+        # Anti-reverse-engineering: occasional suboptimal play to confuse opponents
+        # who learned old patterns
+        should_play_deceptive = self._strategy_mode == 2 and np.random.rand() < 0.15
 
         for piece_nr in movable:
             from_home = piece_nr in at_home and piece_nr not in my_on_board
@@ -724,6 +763,13 @@ class Dominique:
                 reverse=True,
             )
             best_piece = int(tied[0]["piece"])
+        
+        # Deceptive play: occasionally pick a suboptimal piece to be unpredictable
+        if should_play_deceptive and len(evaluations) > 2:
+            # Pick second-best to confuse pattern learners
+            sorted_evals = sorted(evaluations, key=lambda ev: float(ev["score"]), reverse=True)
+            if len(sorted_evals) > 1:
+                best_piece = int(sorted_evals[1]["piece"])
 
         return int(best_piece)
 
@@ -973,12 +1019,17 @@ class Dominique:
         opponent_entropy = -sum(p * np.log(p + 1e-12) for p in op_dist.values()) / np.log(
             5
         )
-        tau_floor = 0.18 if opponent_entropy > 0.75 else 0.12
+        
+        # Anti-reverse-engineering: randomize tau floor per-instance
+        tau_base = 0.12 + (self._strategy_mode == 0) * 0.05 + (self._strategy_mode == 2) * 0.08
+        tau_floor = tau_base if opponent_entropy > 0.75 else max(0.06, tau_base - 0.03)
         tau = max(tau_floor, 0.35 - st["round"] / 1800)
 
         if "g" in utilities:
             # Suppress predictable panic-shots into likely duck/gun counters.
-            utilities["g"] -= 0.35 * op_dist.get("d", 0.0) + 0.20 * op_dist.get("g", 0.0)
+            # But occasionally ignore this to look unpredictable
+            if np.random.rand() > 0.2 or self._strategy_mode != 2:
+                utilities["g"] -= 0.35 * op_dist.get("d", 0.0) + 0.20 * op_dist.get("g", 0.0)
 
         max_u = max(utilities.values())
         weights = {m: np.exp((utilities[m] - max_u) / tau) for m in legal_moves}
@@ -1028,8 +1079,12 @@ class Dominique:
                 loss_streak = sum(1 for p in recent_payoffs if p < 0)
                 if loss_streak >= 3:
                     urgency *= 1.35
+            
+            # Anti-reverse-engineering: randomized bet multiplier per instance
+            bet_multiplier = 0.55 + (self._strategy_mode == 0) * 0.08 - (self._strategy_mode == 2) * 0.10
+            bet_multiplier += np.random.uniform(-0.05, 0.05)  # Constant noise
 
-            raw_bet = max_legal_bet * edge * (0.15 + 0.85 * confidence) * 0.55 * urgency
+            raw_bet = max_legal_bet * edge * (0.15 + 0.85 * confidence) * bet_multiplier * urgency
             bet = int(np.clip(raw_bet, 0, max_legal_bet))
 
         if chosen_move == "g":
