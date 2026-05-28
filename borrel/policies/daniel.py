@@ -54,6 +54,126 @@ class Daniel:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
+        my_pos = None
+        current_direction = None
+        
+        for i in range(grid.shape[0]):
+            for j in range(grid.shape[1]):
+                if grid[i, j] in ['>', '<', '^', 'v']:
+                    my_pos = (i, j)
+                    if grid[i, j] == '>':
+                        current_direction = 'right'
+                    elif grid[i, j] == '<':
+                        current_direction = 'left'
+                    elif grid[i, j] == '^':
+                        current_direction = 'up'
+                    elif grid[i, j] == 'v':
+                        current_direction = 'down'
+                    break
+            if my_pos:
+                break
+        
+        if not my_pos:
+            return "right"  # Fallback
+        
+        # Define direction vectors
+        directions = {
+            'up': (-1, 0),
+            'down': (1, 0),
+            'left': (0, -1),
+            'right': (0, 1)
+        }
+        
+        # Opposite directions (can't turn 180 degrees)
+        opposites = {
+            'up': 'down',
+            'down': 'up',
+            'left': 'right',
+            'right': 'left'
+        }
+        
+        def count_reachable_spaces(start_row, start_col):
+            """Count empty spaces reachable from a position using BFS."""
+            if start_row < 0 or start_row >= grid.shape[0]:
+                return 0
+            if start_col < 0 or start_col >= grid.shape[1]:
+                return 0
+            if grid[start_row, start_col] != ' ':
+                return 0
+            
+            visited = set()
+            queue = [(start_row, start_col)]
+            count = 0
+            
+            while queue:
+                row, col = queue.pop(0)
+                
+                if (row, col) in visited:
+                    continue
+                if row < 0 or row >= grid.shape[0]:
+                    continue
+                if col < 0 or col >= grid.shape[1]:
+                    continue
+                if grid[row, col] != ' ':
+                    continue
+                
+                visited.add((row, col))
+                count += 1
+                
+                # Add neighbors
+                queue.append((row + 1, col))
+                queue.append((row - 1, col))
+                queue.append((row, col + 1))
+                queue.append((row, col - 1))
+            
+            return count
+        
+        # Evaluate each direction
+        best_move = None
+        best_score = -1
+        
+        for move_name, (dr, dc) in directions.items():
+            # Skip opposite direction (would just continue in current direction)
+            if current_direction and move_name == opposites[current_direction]:
+                continue
+            
+            # Calculate next position
+            next_row = my_pos[0] + dr
+            next_col = my_pos[1] + dc
+            
+            # Check if move is valid
+            if next_row < 0 or next_row >= grid.shape[0]:
+                continue
+            if next_col < 0 or next_col >= grid.shape[1]:
+                continue
+            if grid[next_row, next_col] != ' ':
+                continue
+            
+            # Count reachable spaces from this move
+            score = count_reachable_spaces(next_row, next_col)
+            
+            if score > best_score:
+                best_score = score
+                best_move = move_name
+        
+        # If no valid move found (shouldn't happen), pick a random valid one
+        if best_move is None:
+            valid_moves = []
+            for move_name, (dr, dc) in directions.items():
+                next_row = my_pos[0] + dr
+                next_col = my_pos[1] + dc
+                if (0 <= next_row < grid.shape[0] and 
+                    0 <= next_col < grid.shape[1] and 
+                    grid[next_row, next_col] == ' '):
+                    valid_moves.append(move_name)
+            
+            if valid_moves:
+                best_move = str(np.random.choice(valid_moves))
+            else:
+                best_move = "right"  # Last resort
+        
+        return best_move
+
         return str(np.random.choice(["up", "down", "left", "right"]))
 
     def dots_and_lines(
@@ -305,6 +425,73 @@ class Daniel:
 
         Good luck removing the pieces of your opponents!
         """
+        # Find our home position to calculate starting position
+        our_home_row = board[board["home"] == self.name]
+        our_home_index = our_home_row.index
+        starting_position = (our_home_index + 1) % len(board)
+        
+        
+        board_size = len(board)
+        # first check whether a piece can finish by moving it from its current position with the current dice roll to exactly the home position. If so, move that piece.
+        for piece_nr in range(1, 5):
+            # Skip finished pieces
+            if piece_nr in info["pieces_finished"][self.name]:
+                continue
+            
+            if piece_nr in info["pieces_at_home"][self.name]:
+                continue
+            # piece is not finished, check if it can be moved to home
+            # Piece is on the board, find its current position
+            piece_name = f"{self.name}_{piece_nr}"
+            piece_rows = board[board["space"] == piece_name]
+            current_position = piece_rows.index
+            target_position = (current_position + dice_roll) % board_size
+                
+            
+            # Check if target position is home position
+            if target_position == our_home_index:
+                return piece_nr
+
+        
+        # Check each piece (1-4) to see if it can capture an opponent
+        for piece_nr in range(1, 5):
+            # Skip finished pieces
+            if piece_nr in info["pieces_finished"][self.name]:
+                continue
+            
+            target_position = None
+            
+            # Check if piece is at home
+            if piece_nr in info["pieces_at_home"][self.name]:
+                # Can only place if dice_roll is 6
+                if dice_roll == 6 and starting_position is not None:
+                    target_position = starting_position
+            else:
+                # Piece is on the board, find its current position
+                piece_name = f"{self.name}_{piece_nr}"
+                piece_rows = board[board["space"] == piece_name]
+                current_position = piece_rows.index[0]
+                target_position = (current_position + dice_roll) % board_size
+            
+            # Check if target position has an opponent piece
+            target_space = board.loc[target_position, "space"]
+            # If there's an opponent piece at target, capture it!
+            if target_space is not None and not target_space.startswith(self.name):
+                return piece_nr
+        
+        # No captures available, if dice roll is 6, try to move a piece from home if possible
+        if dice_roll == 6:
+            for piece_nr in info["pieces_at_home"][self.name]:
+                if piece_nr in info["pieces_finished"][self.name]:
+                    continue
+                return piece_nr
+
+        for nr in range(1, 5):
+            if nr not in info["pieces_finished"][self.name]:
+                return nr
+        
+        return 1
+
         # Dummy policy for sorry, just keeps moving the first piece that is not finished yet
         for nr in range(1, 5):
             if nr not in info["pieces_finished"][self.name]:
@@ -384,4 +571,62 @@ class Daniel:
 
         Good luck with this extremely logical and strategic game of ROCK PAPER SCISSORS GUN DUCK!
         """
-        return (str(np.random.choice(["r", "p", "s", "g", "d"])), 100)
+        # Determine current round number
+        current_round = len(history)
+        
+        # Check if gun is available
+        if len(history) == 0:
+            gun_available = True
+        else:
+            my_reload_timer = history[f"{self.name}_reload_timer"].iloc[-1]
+            # If reload_timer <= 1, gun is available for this round
+            gun_available = my_reload_timer <= 1
+        
+        # Strategy: Use gun on rounds 6, 11, 16, 21, 26... (if available)
+        gun_rounds = {6 + 5*i for i in range(120)}  # Generates {6, 11, 16, 21, 26, ..., 601}
+        
+        if current_round in gun_rounds and gun_available:
+            choice = "g"
+        elif len(history) > 0:
+            # Find opponent's column name
+            opponent_name = None
+            for col in history.columns:
+                if col not in [self.name, f"{self.name}_score", f"{self.name}_reload_timer", 
+                            f"{self.name}_bet", "rounds_remaining"] and \
+                history[col].dtype == 'object':
+                    opponent_name = col
+                    break
+            
+            if opponent_name:
+                opponent_last_move = history[opponent_name].iloc[-1]
+                
+                # Second-order counter logic: beat what beats opponent's last move
+                # (excluding gun from intermediate counters)
+                second_order_responses = {
+                    'r': ['p', 's', 'r'],  # rock -> {d,p} -> {p,s} ∪ {s,r}
+                    'p': ['r'],             # paper -> {s} -> {r}
+                    's': ['d', 'p'],       # scissors -> {r} -> {d,p}
+                    'g': ['p', 's'],       # gun -> {d} -> {p,s}
+                    'd': ['s', 'r']        # duck -> {p,s} -> {s} ∪ {r}
+                }
+                
+                if opponent_last_move in second_order_responses:
+                    possible_moves = second_order_responses[opponent_last_move]
+                    choice = str(np.random.choice(possible_moves))
+                else:
+                    choice = "d"  # Default to duck
+            else:
+                choice = "d"  # Default to duck if can't find opponent
+        else:
+            # First round, default to duck
+            choice = "d"
+
+        # round 6 should be duck
+        if current_round == 6:
+            choice = "d"
+        
+        # Conservative betting strategy
+        bet = 100
+        
+        return (choice, bet)
+        # return (str(np.random.choice(["r", "p", "s", "g", "d"])), 100)
