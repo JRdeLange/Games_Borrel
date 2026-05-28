@@ -81,26 +81,23 @@ class Ivo:
         if my_r is None:
             return "up"
 
-        def bfs_from(start_r, start_c):
-            """BFS distance map from (start_r, start_c) over empty cells."""
-            dist = {(start_r, start_c): 0}
+        def flood_fill(start_r, start_c):
+            """BFS count of reachable empty cells from (start_r, start_c)."""
+            visited = {(start_r, start_c)}
             q = deque([(start_r, start_c)])
             while q:
                 r, c = q.popleft()
                 for dr, dc in dir_deltas.values():
-                    nr, nc = r + dr, c + dc
+                    nr2, nc2 = r + dr, c + dc
                     if (
-                        (nr, nc) not in dist
-                        and 0 <= nr < rows
-                        and 0 <= nc < cols
-                        and grid[nr, nc] == " "
+                        (nr2, nc2) not in visited
+                        and 0 <= nr2 < rows
+                        and 0 <= nc2 < cols
+                        and grid[nr2, nc2] == " "
                     ):
-                        dist[(nr, nc)] = dist[(r, c)] + 1
-                        q.append((nr, nc))
-            return dist
-
-        # Voronoi: BFS from opponent's current position (run once)
-        opp_dist = bfs_from(opp_r, opp_c) if opp_r is not None else {}
+                        visited.add((nr2, nc2))
+                        q.append((nr2, nc2))
+            return len(visited)
 
         best_move = current_dir  # fallback: keep going straight
         best_score = (-1, 0)
@@ -116,16 +113,10 @@ class Ivo:
             if grid[nr, nc] != " ":
                 continue
 
-            my_dist = bfs_from(nr, nc)
-            # Territory = cells I reach no later than opponent
-            my_territory = sum(
-                1 for pos, d in my_dist.items() if pos not in opp_dist or d <= opp_dist[pos]
-            )
-            # Opponent territory = cells they reach strictly before me
-            opp_territory = sum(
-                1 for pos, d in opp_dist.items() if pos not in my_dist or d < my_dist[pos]
-            )
-            score = (my_territory, -opp_territory)
+            space = flood_fill(nr, nc)
+            # Tiebreaker: prefer moves farther from opponent to avoid head-on collisions
+            opp_gap = (abs(nr - opp_r) + abs(nc - opp_c)) if opp_r is not None else 0
+            score = (space, opp_gap)
             if score > best_score:
                 best_score = score
                 best_move = direction
