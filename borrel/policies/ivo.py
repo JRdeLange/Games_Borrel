@@ -7,7 +7,7 @@ import pandas as pd
 class Ivo:
     def __init__(self, name: str = "ivo"):
         # NOTE: DO NOT TOUCH!
-        self.name = name  # NOTE: DO NOT TOUCH!
+        self.name = name  # NOTE: DO TOUCH!
         # NOTE: DO NOT TOUCH!
 
         # Feel free to store whatever you want here.
@@ -54,7 +54,63 @@ class Ivo:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
-        return str(np.random.choice(["up", "down", "left", "right"]))
+        head_chars = {">": "right", "<": "left", "^": "up", "v": "down"}
+        opposite = {"up": "down", "down": "up", "left": "right", "right": "left"}
+        dir_deltas = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
+
+        rows, cols = grid.shape
+
+        # Locate my head and current direction
+        my_r, my_c, current_dir = None, None, "up"
+        for r in range(rows):
+            for c in range(cols):
+                if grid[r, c] in head_chars:
+                    my_r, my_c = r, c
+                    current_dir = head_chars[grid[r, c]]
+                    break
+            if my_r is not None:
+                break
+
+        if my_r is None:
+            return "up"
+
+        def flood_fill(start_r, start_c):
+            """DFS count of reachable empty cells from (start_r, start_c)."""
+            visited = set()
+            stack = [(start_r, start_c)]
+            while stack:
+                r, c = stack.pop()
+                if (r, c) in visited:
+                    continue
+                if not (0 <= r < rows and 0 <= c < cols):
+                    continue
+                if grid[r, c] != " ":
+                    continue
+                visited.add((r, c))
+                for dr, dc in dir_deltas.values():
+                    stack.append((r + dr, c + dc))
+            return len(visited)
+
+        best_move = current_dir  # fallback: keep going straight
+        best_score = -1
+
+        for direction, (dr, dc) in dir_deltas.items():
+            if direction == opposite[current_dir]:
+                continue  # game ignores 180-degree turns anyway
+
+            nr, nc = my_r + dr, my_c + dc
+
+            if not (0 <= nr < rows and 0 <= nc < cols):
+                continue
+            if grid[nr, nc] != " ":
+                continue
+
+            score = flood_fill(nr, nc)
+            if score > best_score:
+                best_score = score
+                best_move = direction
+
+        return best_move
 
     def dots_and_lines(
         self,
@@ -158,18 +214,99 @@ class Ivo:
 
         Good luck connecting those dots!
         """
-        # Find all legal moves and pick a random one
-        size = horizontal_lines.shape[1]
-        legal_moves = []
+        size = horizontal_lines.shape[1]  # 5
+
+        def box_sides(r, c):
+            return (
+                int(horizontal_lines[r, c])
+                + int(horizontal_lines[r + 1, c])
+                + int(vertical_lines[r, c])
+                + int(vertical_lines[r, c + 1])
+            )
+
+        def adj_boxes(ori, row, col):
+            candidates = (
+                [(row - 1, col), (row, col)] if ori == "h" else [(row, col - 1), (row, col)]
+            )
+            return [(r, c) for r, c in candidates if 0 <= r < size and 0 <= c < size]
+
+        def chain_length_from(ori, row, col):
+            """Simulate opponent's greedy play: how many boxes do they collect after this move?"""
+            h = horizontal_lines.copy()
+            v = vertical_lines.copy()
+            if ori == "h":
+                h[row, col] = True
+            else:
+                v[row, col] = True
+
+            def sides_at(r, c):
+                return int(h[r, c]) + int(h[r + 1, c]) + int(v[r, c]) + int(v[r, c + 1])
+
+            scored = set()
+            changed = True
+            while changed:
+                changed = False
+                for r in range(size):
+                    for c in range(size):
+                        if (
+                            (r, c) not in scored
+                            and box_owners[r, c] is None
+                            and sides_at(r, c) == 3
+                        ):
+                            # Opponent draws the missing (4th) side
+                            if not h[r, c]:
+                                h[r, c] = True
+                            elif not h[r + 1, c]:
+                                h[r + 1, c] = True
+                            elif not v[r, c]:
+                                v[r, c] = True
+                            elif not v[r, c + 1]:
+                                v[r, c + 1] = True
+                            scored.add((r, c))
+                            changed = True
+            return len(scored)
+
+        completing = []
+        safe = []
+        unsafe = []
+
         for row in range(size + 1):
             for col in range(size):
                 if not horizontal_lines[row, col]:
-                    legal_moves.append({"orientation": "h", "row": row, "col": col})
+                    move = {"orientation": "h", "row": row, "col": col}
+                    sides = [box_sides(r, c) for r, c in adj_boxes("h", row, col)]
+                    if any(s == 3 for s in sides):
+                        completing.append(move)
+                    elif any(s == 2 for s in sides):
+                        unsafe.append(move)
+                    else:
+                        safe.append(move)
+
         for row in range(size):
             for col in range(size + 1):
                 if not vertical_lines[row, col]:
-                    legal_moves.append({"orientation": "v", "row": row, "col": col})
-        return legal_moves[np.random.randint(0, len(legal_moves))]
+                    move = {"orientation": "v", "row": row, "col": col}
+                    sides = [box_sides(r, c) for r, c in adj_boxes("v", row, col)]
+                    if any(s == 3 for s in sides):
+                        completing.append(move)
+                    elif any(s == 2 for s in sides):
+                        unsafe.append(move)
+                    else:
+                        safe.append(move)
+
+        # Priority 1: take any box that is ready to complete
+        if completing:
+            return completing[0]
+
+        # Priority 2: safe moves — don't give opponent a 3-sided box
+        if safe:
+            return safe[np.random.randint(len(safe))]
+
+        # Priority 3: forced to open — sacrifice the smallest chain.
+        # Sorting by chain_length_from gives the opponent the fewest boxes,
+        # leaving larger chains for us to collect next.
+        unsafe.sort(key=lambda m: chain_length_from(m["orientation"], m["row"], m["col"]))
+        return unsafe[0]
 
     def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
         """
@@ -305,16 +442,56 @@ class Ivo:
 
         Good luck removing the pieces of your opponents!
         """
-        # Dummy policy for sorry, just keeps moving the first piece that is not finished yet
-        for nr in range(1, 5):
-            if nr not in info["pieces_finished"][self.name]:
-                return nr
+        my_name = self.name
+        board_length = len(board)
+        finished = info["pieces_finished"][my_name]
+        at_home = info["pieces_at_home"][my_name]
 
-        return 1
+        # Find my home index
+        home_idx = board[board["home"] == my_name].index[0]
 
-    def rps_gun(
-        self, history: pd.DataFrame
-    ) -> tuple[Literal["r", "p", "s", "g", "d"], int]:
+        # Find which of my pieces are on the board and where
+        my_on_board = board[board["space"].str.startswith(my_name + "_", na=False)]
+        on_board = {int(row["space"].split("_")[-1]): idx for idx, row in my_on_board.iterrows()}
+
+        # Determine legal pieces to move
+        if dice_roll == 6:
+            legal = [
+                p for p in range(1, 5) if p not in finished and (p in on_board or p in at_home)
+            ]
+        else:
+            legal = [p for p in on_board if p not in finished]
+
+        if not legal:
+            return 1  # fallback (no valid move anyway)
+
+        def score(piece_num):
+            if piece_num in at_home:
+                new_idx = (home_idx + 1) % board_length
+            else:
+                new_idx = (on_board[piece_num] + dice_roll) % board_length
+
+            occupant = board.loc[new_idx, "space"]
+
+            # Strongly avoid landing on own piece (sends it home)
+            if isinstance(occupant, str) and occupant.startswith(my_name + "_"):
+                return -10
+
+            # Highest priority: finish this piece
+            if board.loc[new_idx, "home"] == my_name:
+                return 100
+
+            # Good: knock an opponent piece home
+            if isinstance(occupant, str):
+                return 10
+
+            # Otherwise: prefer pieces closer to home (fewer steps remaining)
+            steps_to_home = (home_idx - new_idx) % board_length
+            return -steps_to_home  # higher score = fewer steps remaining
+
+        return max(legal, key=score)
+
+    def rps_gun(self, history: pd.DataFrame) -> tuple[Literal["r", "p", "s", "g", "d"], int]:
         """
         Welcome to ROCK PAPER SCISSORS GUN DUCK!
 
@@ -384,4 +561,71 @@ class Ivo:
 
         Good luck with this extremely logical and strategic game of ROCK PAPER SCISSORS GUN DUCK!
         """
-        return (str(np.random.choice(["r", "p", "s", "g", "d"])), 100)
+        my_name = self.name
+        # Find opponent's column name (bare player-name columns have no underscores-suffix)
+        player_cols = [
+            c
+            for c in history.columns
+            if not c.endswith(("_bet", "_score", "_reload_timer")) and c != "rounds_remaining"
+        ]
+        opp_name = next((c for c in player_cols if c != my_name), None)
+
+        # Determine if my gun is ready this round.
+        # decrement_reload_timer() runs BEFORE we are called, but history only has
+        # previous rounds.  The recorded timer is already post-decrement for that round.
+        #   last timer == 1  → this round decrements to 0 → can fire
+        #   last timer == 0 and last choice != 'g' → still 0 → can fire
+        #   last timer == 0 and last choice == 'g' → fired last round, reset to 5, now 4 → cannot fire
+        #   empty history    → timer started at 5, now 4 → cannot fire
+        if len(history) == 0:
+            can_fire = False
+            my_score = 0
+        else:
+            last = history.iloc[-1]
+            t = int(last[my_name + "_reload_timer"])
+            last_move = last[my_name]
+            can_fire = (t == 1) or (t == 0 and last_move != "g")
+            my_score = last[my_name + "_score"]
+
+        # Analyse opponent's recent behaviour
+        # what to play to beat each opponent choice
+        counter = {"r": "d", "p": "s", "s": "r", "g": "d", "d": "p"}
+        most_common_opp = "r"
+        duck_rate = 0.0
+        gun_rate = 0.0
+        opp_can_fire = False
+
+        if opp_name and len(history) > 0:
+            last = history.iloc[-1]
+            opp_t = int(last[opp_name + "_reload_timer"])
+            opp_last = last[opp_name]
+            opp_can_fire = (opp_t == 1) or (opp_t == 0 and opp_last != "g")
+
+            recent_opp = list(history[opp_name].tail(10))
+            most_common_opp = max(recent_opp, key=recent_opp.count)
+            duck_rate = recent_opp.count("d") / len(recent_opp)
+            gun_rate = recent_opp.count("g") / len(recent_opp)
+
+        # Choose move
+        if can_fire:
+            if len(history) >= 5 and duck_rate > 0.4:
+                # Opponent ducks a lot — skip gun, play scissors (beats duck and paper)
+                move = "s"
+            else:
+                move = "g"
+        elif opp_can_fire and len(history) >= 5 and gun_rate > 0.5:
+            # Opponent fires frequently when ready — duck to counter
+            move = "d"
+        else:
+            # Counter opponent's most common recent move
+            move = counter[most_common_opp]
+
+        # Bet 0 when in debt (avoid compounding 10% interest), more when confident
+        if my_score < 0:
+            bet = 0
+        elif can_fire and duck_rate <= 0.4:
+            bet = 200
+        else:
+            bet = 100
+
+        return (move, bet)
