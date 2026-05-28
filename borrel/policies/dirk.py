@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 
 
-class Jakko:
-    def __init__(self, name: str = "jakko"):
+class Dirk:
+    def __init__(self, name: str = "dirk"):
         # NOTE: DO NOT TOUCH!
         self.name = name  # NOTE: DO NOT TOUCH!
         # NOTE: DO NOT TOUCH!

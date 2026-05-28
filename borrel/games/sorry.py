@@ -129,17 +129,21 @@ class Sorry:
             self.info["pieces_at_home"][player.name] = [1, 2, 3, 4]
             self.info["pieces_finished"][player.name] = []
 
-    def play_game(self, n_games: int = 10):
+    def play_game(self):
         scores = {player.name: 0 for player in self.players}
 
-        for _ in range(n_games):
-            self.reset()
-            while True:
-                self.play_turn()
-                for player in self.players:
-                    if len(self.info["pieces_finished"][player.name]) == 4:
-                        scores[player.name] += 1
-                        break
-                else:
-                    continue
-                break
+        self.reset()
+
+        while True:
+            self.play_turn()
+            for player in self.players:
+                if len(self.info["pieces_finished"][player.name]) == 4:
+                    scores[player.name] += 1
+                    break
+            else:
+                continue
+            break
+
+        highest_score = max(scores.values())
+        winners = [name for name, score in scores.items() if score == highest_score]
+        return winners

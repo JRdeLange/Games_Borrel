@@ -1,134 +1,18 @@
-import random
-from collections import deque
 from typing import Literal
 
 import numpy as np
 import pandas as pd
-from collections import deque
-import random
+
 
 class Ivo:
-
     def __init__(self, name: str = "ivo"):
         # NOTE: DO NOT TOUCH!
         self.name = name  # NOTE: DO NOT TOUCH!
         # NOTE: DO NOT TOUCH!
 
-
-        self.wonk_profiles = {
-            "wonk": (0.5, 1.0),
-            "turbowonk": (2.5, 10.0),
-            "hyperwonk": (5.0, 30.0),
-            "golden wonk": (0.5, 0.0),
-            "golden turbowonk": (2.5, 0.0),
-            "golden hyperwonk": (5.0, 0.0),
-        }
         # Feel free to store whatever you want here.
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
-
-    def minority(self, history: pd.DataFrame) -> Literal["A", "B"]:
-        """
-        In this game you pick between two options: "A" or "B".
-        You are playing against all other players at once.
-        Each round point is granted to all players who choose the option chosen by the fewest nr of players.
-
-        You receive a pandas dataframe representing the history of the game.
-        The dataframe has a column for each player, and in each row the choice of the player in that round:
-
-          dummy1 dummy2 dummy3  rounds_remaining
-        0      B      B      A               4.0
-        1      A      A      A               3.0
-        2      A      B      A               2.0
-        3      B      A      B               1.0
-        4      A      B      B               0.0
-
-        These are dummy names and will be e.g. "ivo" "do" "carlos" in the scoring round.
-        I advise you to deal with these names dynamically, as they are not guaranteed to all be present.
-
-        The score in the example above would be:
-        {'dummy1': 1, 'dummy2': 2, 'dummy3': 1}
-
-        Write a function that returns "A" or "B" based on the current state of the game.
-
-        A full game is always 100 rounds.
-
-        Good luck with this game of social deduction!
-        """
-
-        if len(history) == 0:
-            # if this is the first round, return a random choice
-            return str(np.random.choice(["A", "B"]))
-
-        strategy = "ε-greedy"  # or "random", or "win-shift-lose-stay"
-        if strategy == "win-stay-lose-shift":
-            my_choice = history[self.name].iloc[-1]
-            if self.detect_minority_win(history):
-                # if I won, I will stay with my choice
-                return my_choice
-            else:
-                return "A" if my_choice == "B" else "B"
-        elif strategy == "win-shift-lose-stay":
-            my_choice = history[self.name].iloc[-1]
-            if self.detect_minority_win(history):
-                # if I won, I will shift my choice
-                return "A" if my_choice == "B" else "B"
-            else:
-                return my_choice
-        elif strategy == "random":
-            # if I won, I will stay with my choice
-            return str(np.random.choice(["A", "B"]))
-
-        elif strategy == "ε-greedy":
-            ε = 0.0
-            # 1) pure exploration
-            if len(history) == 0 or np.random.rand() < ε:
-                return np.random.choice(["A", "B"])
-            # 2) exploitation: Win-Stay-Lose-Shift
-            last = history[self.name].iloc[-1]
-            # did you actually “win” on that last choice?
-            # minority = the choice with fewer players in the last row
-            counts = history.iloc[-1].value_counts()
-            minority_choice = "A" if counts.get("A",0) < counts.get("B",0) else "B"
-            won_last = (last == minority_choice)
-            if won_last:
-                return self.get_other_move(last)
-            else:
-                return last
-
-
-        print("ERROR: Unknown strategy. Please tell Ivo he has a bug.")
-        return str(np.random.choice(["A", "B"]))
-
-    def get_other_move(self, move):
-        """
-        Returns the move of the other player.
-        """
-        if move == "A":
-            return "B"
-        elif move == "B":
-            return "A"
-        else:
-            raise ValueError("Invalid move")
-
-    def detect_minority_win(self, history: pd.DataFrame) -> bool:
-        # grab the last row of the history dataframe
-        last_row = history.iloc[-1]
-        # get the number of players who chose A and B
-        num_A = (last_row == "A").sum()
-        num_B = (last_row == "B").sum()
-        if num_A == 0 or num_B == 0:
-            return False
-        # check if the player won
-        if num_A < num_B:
-            winner = "A"
-        else:
-            winner = "B"
-        # check if the player is in the minority
-        if last_row[self.name] == winner:
-            return True
-        else:
-            return False
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
@@ -170,475 +54,471 @@ class Ivo:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
+        return str(np.random.choice(["up", "down", "left", "right"]))
 
-        # Thanks Carlos :)
+    def dots_and_lines(
+        self,
+        horizontal_lines: np.ndarray,
+        vertical_lines: np.ndarray,
+        box_owners: np.ndarray,
+        history: pd.DataFrame,
+    ) -> dict:
+        """
+        Classic dots-and-boxes style game for two players.
 
-        self.tron_grid = grid
-        self.tron_height = len(grid)
-        self.tron_width = len(grid[0])
+        How the board is represented:
+        - Dots are implicit: there are (size + 1) x (size + 1) dots.
+        - horizontal_lines: 2D bool array of shape (size + 1, size).
+          True means the horizontal edge at that position has been drawn.
+        - vertical_lines: 2D bool array of shape (size, size + 1).
+          True means the vertical edge at that position has been drawn.
+        - box_owners: 2D array of shape (size, size), where each cell is either
+          None or the name of the player that completed that box.
 
-        self.tron_dirs = {
-            "up": (-1, 0),
-            "down": (1, 0),
-            "left": (0, -1),
-            "right": (0, 1),
+        Turn flow:
+        - Current player draws a line.
+        - If the line completes one or more boxes, those boxes are scored and the
+          same player gets another turn.
+        - Otherwise the turn passes to the opponent.
+        - When all lines are drawn, the player with the most boxes wins.
+
+        You also receive a history dataframe with the following columns:
+        - player: the name of the player who drew the line
+        - orientation: "h" (horizontal) or "v" (vertical)
+        - row: the row index of the line
+        - col: the column index of the line
+        - boxes_completed: the number of boxes completed by this move
+        - <player1>_score: score of player 1 after this move
+        - <player2>_score: score of player 2 after this move
+        - lines_remaining: the number of lines still to be drawn
+
+        Invalid move behavior:
+        - If your function crashes, returns an invalid format, or picks an
+          already-drawn line, a random legal move is played for you instead
+          and you will be informed via a printed message.
+
+        Write a function that returns a move in this format:
+        - {"orientation": "h"|"v", "row": int, "col": int}
+
+        Example of how a board is built up (5x5 boxes, so 6x6 dots):
+
+        Start — empty board:
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        After h(row=0, col=0) — top edge of top-left box:
+        .---.   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        After v(row=0, col=0) and v(row=0, col=1) — left and right edges:
+        .---.   .   .   .   .
+        |   |
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        After h(row=1, col=0) — bottom edge completes the box, scored to player A:
+        .---.   .   .   .   .
+        | A |
+        .---.   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        .   .   .   .   .   .
+
+        The board size is always 5x5 (so 6x6 dots, 6x5 horizontal lines, 5x6 vertical lines).
+
+        Good luck connecting those dots!
+        """
+        # Find all legal moves and pick a random one
+        size = horizontal_lines.shape[1]
+        legal_moves = []
+        for row in range(size + 1):
+            for col in range(size):
+                if not horizontal_lines[row, col]:
+                    legal_moves.append({"orientation": "h", "row": row, "col": col})
+        for row in range(size):
+            for col in range(size + 1):
+                if not vertical_lines[row, col]:
+                    legal_moves.append({"orientation": "v", "row": row, "col": col})
+        return legal_moves[np.random.randint(0, len(legal_moves))]
+
+    def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
+        """
+                ROUGH DRAFT
+                This is a slightly modified version of the classic game of Sorry! (Mens erger je niet!)
+
+        Every turn you will get a pandas dataframe with the current state of the board
+        It will have a row for each board space
+        It will have a column called "home" which will hold None or the name of the player whose home it is (e.g. "Mees" or "Ivo")
+        - Homes are evenly space apart, every 5 spaces
+        It will have a column called "space" which will hold either None (empty space) or a piece
+        Pieces are named as "playername_piecenum" (e.g. "Ivo_1", "Jan_2")
+        Each player has 4 pieces, numbered 1-4
+        Pieces move down this board. Pieces placed on the board will be placed on the first space after their home space.
+        The board is circular, so after the last space it goes back to the first space.
+        A piece that lands on its home space is considered finished and is removed from the board.
+        The first player to get all 4 pieces finished wins the game.
+
+        Additionally you will get a dictionary with some info on the game, which will have the following keys:
+        - "pieces_at_home": a dictionary with player names as keys and a list of piece numbers at home as values
+        - "pieces_finished": a dictionary with player names as keys and a list of piece numbers that have finished as values
+
+        Additionally you will receive your current dice roll (a random number in the range [1, 6])
+        - if this number is a 6, you can choose to move a piece from home to the starting position (if you have any pieces at home) or move a piece on the board
+        - if this number is not a 6, you must move a piece on the board (if you have any pieces on the board)
+
+        You must return the number of the piece you want to move (1-4). This piece will then be moved according to the rules of the game.
+
+        Moving rules:
+        - If you move a piece from home to the starting position, it will be placed on the first space of the board after your home space
+            - This means that if you overshoot your home, you will just continue moving!
+        - If you move a piece on the board, it will move forward a number of spaces equal to the dice roll
+        - If a piece lands on a space occupied by another piece, the other piece is sent back to its home
+
+        Examples (with only 2 players, Mark and Dirk):
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | None  |
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | None  |
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | None  |
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [1, 2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [], "Dirk": []},
         }
 
-        dir_symbols = {">": "right", "<": "left", "^": "up", "v": "down"}
+        Mark now rolls a 6 and decides to move piece 1 from home to the starting position. The board now looks like this:
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | Mark_1|
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | None  |
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | None  |
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [], "Dirk": []},
+        }
 
-        for r in range(self.tron_height):
-            for c in range(self.tron_width):
-                ch = grid[r][c]
-                if ch in dir_symbols:
-                    self_pos = (r, c)
-                    self_dir = dir_symbols[ch]
+        Several turn later the board looks like this:
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | None  |
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | Mark_1|
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | Dirk_1|
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [], "Dirk": []},
+        }
 
-        legal_moves = []
-        for move, (dr, dc) in self.tron_dirs.items():
-            nr, nc = self_pos[0] + dr, self_pos[1] + dc
-            if self._tron_is_safe(nr, nc):
-                legal_moves.append(move)
+        Mark now rolls a 3 and decides to move piece 1. The board now looks like this:
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | None  |
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | None  |
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | Mark_1|
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [], "Dirk": []},
+        }
 
-        if not legal_moves:
-            return self_dir
+        Dirks piece is sent back to his home.
+        If mark now rolls a 2, he can move piece 1, by returning the integer 1, to the home space and finish it.
+        If mark now rolls a 4, he can move piece 1, by returning the integer 1, overshooting his home. The piece will end up on index 3
+        If mark now rolls a 6, he can either:
+        - return the integer 1 to move piece 1 past his home, ending up on index 5
+        - return integer 2, 3 or 4 to move a new piece from home to the starting position, ending up on index 1
 
-        # best_move = max(
-        #     legal_moves,
-        #     key=lambda move: self._tron_flood_fill_area(
-        #         self_pos[0] + self.tron_dirs[move][0],
-        #         self_pos[1] + self.tron_dirs[move][1]
-        #     )
-        # )
+        Say that mark rolls a 2 and decides to move piece 1, then the board will look like this:
+        | index | space | home  |
+        | 0     | None  | Mark  |
+        | 1     | None  | None  |
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | None  | Dirk  |
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | None  |
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [1], "Dirk": []},
+        }
 
-        best_move = max(
-            legal_moves,
-            key=lambda move: self._tron_flood_fill_area(
-                self_pos[0] + self.tron_dirs[move][0],
-                self_pos[1] + self.tron_dirs[move][1]
-            )
-        )
-        # tactics_move, execute_tactics = self._tron_tactics()
+        If you perform an illegal move, a random piece of yours is removed from the board and sent back to your home.
+        A move is illegal if it refers to a piece that cannot be moved or placed on the board
+        If no pieces can be removed from the board, nothing happens
 
-        return best_move
-
-
-        # for move in ["up", "down", "left", "right"]:
-        #     if self.tron_check_valid_move(grid, move):
-        #         # if the move is valid, return it
-        #         return move
-        # if no valid move is found, return a random move
-
-        # return str(np.random.choice(["up", "down", "left", "right"]))
-
-    def _tron_tactics(self):
-        pass
-
-    def _tron_is_safe(self, r: int, c: int) -> bool:
-        if not (0 <= r < self.tron_height and 0 <= c < self.tron_width):
-            return False
-        return self.tron_grid[r][c] == " "
-
-    def _tron_flood_fill_area(self, r: int, c: int) -> int:
-        if not self._tron_is_safe(r, c):
-            return 0
-
-        visited = set()
-        queue = deque([(r, c)])
-        visited.add((r, c))
-        area = 0
-
-        while queue:
-            cr, cc = queue.popleft()
-            area += 1
-            for dr, dc in self.tron_dirs.values():
-                nr, nc = cr + dr, cc + dc
-                if (nr, nc) not in visited and self._tron_is_safe(nr, nc):
-                    visited.add((nr, nc))
-                    queue.append((nr, nc))
-
-        return area
+        After every full round of turns the game checks if any player has won by getting all 4 pieces finished. This means two players can tie and both win.
 
 
-    def tron_check_valid_move(
-        self, grid: np.ndarray, move: Literal["up", "down", "left", "right"]
-    ) -> bool:
+        FINAL INSTRUCTIONS
+
+        This is a slightly modified version of the classic game of Sorry! (Mens erger je niet!)
+
+        Every turn you will get a pandas dataframe with the current state of the board. Each row represents a cell on the board.
+        The columns are:
+        - "index" which represents the position on the board, starting at 0 and going up to the number of spaces on the board - 1
+        - "home" which will hold None or the name of the player whose home it is (e.g. "Mees" or "Ivo")
+        - "space" which will hold either None (empty space) or a piece. Pieces are named as "playername_piecenum" (e.g. "Ivo_1", "Jan_2")
+
+        Each turn you will also receive a dictionary with some info on the game, which will have the following keys:
+        - "pieces_at_home": a dictionary with player names as keys and a list of piece numbers at home as values
+        - "pieces_finished": a dictionary with player names as keys and a list of piece numbers that have finished as values
+
+        Additionally you will receive your current dice roll (a random number in the range [1, 6])
+        - if this number is a 6, you can choose to move a piece from home to the starting position
+        - additionally, you can always choose to move a piece on the board, if you have any pieces on the board
+
+        You must return the number of the piece you want to move (1-4). This piece will then be moved according to the rules of the game.
+
+        Pieces move as follows:
+        - If you move a piece from home to the starting position, it will be placed on the first space of the board after your home space
+        - If you move a piece on the board, it will move forward a number of spaces equal to the dice roll
+            - This means that if you overshoot your home, you will just continue moving!
+        - If a piece lands on a space occupied by another piece, the other piece is sent back to its home
+
+        If you perform an illegal move, a random piece of yours is removed from the board and sent back to your home.
+        A move is illegal if it refers to a piece that cannot be moved or placed on the board. Returning an invalid value is also illegal.
+        If no pieces can be removed from the board, nothing happens
+
+        SOME EXAMPLE TURNS (with only 2 players, Mark and Dirk):
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | None  |
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | None  |
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | None  |
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [1, 2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [], "Dirk": []},
+        }
+
+        Mark now rolls a 6 and decides to move piece 1 from home to the starting position. The board now looks like this:
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | Mark_1|
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | None  |
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | None  |
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [], "Dirk": []},
+        }
+
+        Several turn later the board looks like this:
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | None  |
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | Mark_1|
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | Dirk_1|
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [2, 3, 4], "Dirk": [2, 3, 4]},
+            "pieces_finished": {"Mark": [], "Dirk": []},
+        }
+
+        Mark now rolls a 3 and decides to move piece 1. The board now looks like this:
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | None  |
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | None  |
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | Mark_1|
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [], "Dirk": []},
+        }
+
+        Dirks piece is sent back to his home.
+        Dirk now rolls a 3, but since he has no pieces on the board, he cannot move any piece and thus cannot return a valid move. So nothing happens
+
+        If mark now rolls a 2, he can move piece 1, by returning the integer 1, to the home space and finish it.
+        If mark now rolls a 4, he can move piece 1, by returning the integer 1, overshooting his home. The piece will end up on index 3
+        If mark now rolls a 6, he can either:
+        - return the integer 1 to move piece 1 past his home, ending up on index 5
+        - return integer 2, 3 or 4 to move a new piece from home to the starting position, ending up on index 1
+
+        Say that mark rolls a 2 and decides to move piece 1, then the board will look like this:
+        | index | home  | space |
+        | 0     | Mark  | None  |
+        | 1     | None  | None  |
+        | 2     | None  | None  |
+        | 3     | None  | None  |
+        | 4     | None  | None  |
+        | 5     | Dirk  | None  |
+        | 6     | None  | None  |
+        | 7     | None  | None  |
+        | 8     | None  | None  |
+        | 9     | None  | None  |
+        info dict:
+        {
+            "pieces_at_home": {"Mark": [2, 3, 4], "Dirk": [1, 2, 3, 4]},
+            "pieces_finished": {"Mark": [1], "Dirk": []},
+        }
+
+        After every full round of turns the game checks if any player has won by getting all 4 pieces finished.
+        This means two players can tie and both win.
+
+        Good luck removing the pieces of your opponents!
         """
-        Check if the move is valid.
-        A move is valid if it does not hit a wall or a bike, and does not leave the grid.
+        # Dummy policy for sorry, just keeps moving the first piece that is not finished yet
+        for nr in range(1, 5):
+            if nr not in info["pieces_finished"][self.name]:
+                return nr
+
+        return 1
+
+    def rps_gun(
+        self, history: pd.DataFrame
+    ) -> tuple[Literal["r", "p", "s", "g", "d"], int]:
         """
-        # get the current position of the bike
-        bike_pos = np.argwhere(grid == "X")[0]
-        # get the new position of the bike
-        if move == "up":
-            new_pos = (bike_pos[0] - 1, bike_pos[1])
-        elif move == "down":
-            new_pos = (bike_pos[0] + 1, bike_pos[1])
-        elif move == "left":
-            new_pos = (bike_pos[0], bike_pos[1] - 1)
-        elif move == "right":
-            new_pos = (bike_pos[0], bike_pos[1] + 1)
-        else:
-            raise ValueError("Invalid move")
-        # check if the new position is valid
-        if (
-            new_pos[0] < 0
-            or new_pos[0] >= grid.shape[0]
-            or new_pos[1] < 0
-            or new_pos[1] >= grid.shape[1]
-            or grid[new_pos] in ["o", "x", "X"]
-        ):
-            return False
-        return True
+        Welcome to ROCK PAPER SCISSORS GUN DUCK!
 
-    def battleship_place_boats(
-        self, boat_template: pd.DataFrame, grid_size: int
-    ) -> pd.DataFrame:
-        """
-        This game is just Battleship (or in dutch: Zeeslag).
-        First place your boats on the grid, then take turns firing at each other's grid.
-        Once you destroy all boats of the opponent, you win!
+        The rules are simple:
+        - ROCK beats SCISSORS
+        - SCISSORS beats PAPER
+        - PAPER beats ROCK
 
-        Your receive a pandas dataframe representing the boats to be placed.
-        The dataframe has the following columns:
-        - length: the length of the boat (int)
-        - position: the position of the boat (list[int, int])
-        - direction: the direction of the boat (Literal["up", "down", "left", "right"])
+        These you know from normal ROCK PAPER SCISSORS, but now there are two new options:
+        - GUN has you shoot your gun at the opponent. If you do so, you need to wait 5 rounds until the gun is reloaded and you can use GUN again.
+            - GUN beats PAPER and SCISSORS. These options have no recourse against a gun.
+            - If your opponent plays ROCK, they have a 50/50 chance to block the bullet.
+              If so, they then throw their rock at you, which beats your now bullet-less gun. So it's a 50/50!
+            - GUN against GUN is also a 50/50, since you both shoot at the same time, and thus have a 50/50 chance to hit each other.
+            - DUCK ducks under the bullet. The ducker then has the opportunity for an easy under-the-belt strike under the table. So DUCK beats GUN.
 
-        Write a function that returns a pandas dataframe with the position and direction columns
-        changed to whatever you want.
+        - DUCK is the other new option. It has you duck down under the table. You can use it every round, there are no limitations on it.
+            - DUCK beats GUN, as explained above.
+            - DUCK also beats ROCK, since you can duck under a thrown rock. Again leading to an easy under-the-belt strike.
+            - PAPER beats DUCK, since after ducking, the ducker is now rounder, like a rock, and thus vulnerable to paper.
+            - SCISSORS beats DUCK, since after ducking, the ducker is now vulnerable to a stab in the exposed neck with scissors.
 
-        So in a 3x3 grid:
-        . . .
-        . . .
-        . . .
+        The winner of each round receives 100 points. Most points at the end of the game wins!
 
-        A boat {length: 2, position: [1, 0], direction: "right"} would look like this:
-        . . .
-        S S .
-        . . .
+        In addition to returning your choice ("r" for ROCK, "p" for PAPER, "s" for SCISSORS, "g" for GUN, and "d" for DUCK),
+        you can also decide to wager some of your gained points on the round.
 
-        Make sure the configuration is valid! Otherwise it is an instant loss :)
+        If you return a bet, and you win the round, your bet amount is added to your score.
+        If you return a bet, and you lose the round, your bet amount is subtracted from your score.
 
-        The input here is always identical between games:
+        You can lend points from the bank by betting more points than you currently have. You can lend up to 2000 points per round.
+        If you bet more points than you currently have, and then lose the round, you will end up with a debt. This debt has 10% interest per round.
+        EXAMPLE:
+            - ROUND 0
+            - You start with 0 points.
+            - You win the round and gain 100 points.
+            - You now have 100 points.
+            - ROUND 1
+            - You have 100 points.
+            - You bet 300 points on a round, and lose. You now have -200 points.
+            - ROUND 2
+            - Your debt increases by 10% interest. You now have -220 points.
+            - Play continues as normal
 
-        boat_template:
-           length position direction
-        0       2   [0, 0]     right
-        1       2   [1, 0]     right
-        2       3   [2, 0]     right
-        3       5   [3, 0]     right
-
-        grid size is always 6x6
-
-        Good luck with this age-old classic!
-        """
-        placement = boat_template.copy(deep=True)
-        # occupancy map
-        occupied = [[False]*grid_size for _ in range(grid_size)]
-        directions = ["up", "down", "left", "right"]
-
-        for idx, row in placement.iterrows():
-            length = int(row["length"])
-            while True:
-                dir_ = random.choice(directions)
-                # pick a random start so that boat of length L in dir_ stays on the board
-                if dir_ == "up":
-                    x = random.randint(length - 1, grid_size - 1)
-                    y = random.randint(0, grid_size - 1)
-                    coords = [(x - i, y) for i in range(length)]
-                elif dir_ == "down":
-                    x = random.randint(0, grid_size - length)
-                    y = random.randint(0, grid_size - 1)
-                    coords = [(x + i, y) for i in range(length)]
-                elif dir_ == "left":
-                    x = random.randint(0, grid_size - 1)
-                    y = random.randint(length - 1, grid_size - 1)
-                    coords = [(x, y - i) for i in range(length)]
-                else:  # right
-                    x = random.randint(0, grid_size - 1)
-                    y = random.randint(0, grid_size - length)
-                    coords = [(x, y + i) for i in range(length)]
-
-                # check for overlaps
-                if all(not occupied[r][c] for r, c in coords):
-                    # mark these cells occupied
-                    for r, c in coords:
-                        occupied[r][c] = True
-
-                    # record the chosen start & direction
-                    placement.at[idx, "position"] = [coords[0][0], coords[0][1]]
-                    placement.at[idx, "direction"] = dir_
-                    break
-
-        return placement
-
-    def is_battleship_valid_placement(
-        self, length, position, direction, grid_size: int
-    ) -> pd.DataFrame:
-        # check if the boat fits in the grid
-        if direction == "up":
-            if position[0] - length < 0:
-                return False
-        elif direction == "down":
-            if position[0] + length >= grid_size:
-                return False
-        elif direction == "left":
-            if position[1] - length < 0:
-                return False
-        elif direction == "right":
-            if position[1] + length >= grid_size:
-                return False
-        else:
-            raise ValueError("Invalid direction")
-
-    def battleship_turn(
-        self, own_fleet: np.ndarray, opponent_fleet: np.ndarray, grid_size: int
-    ) -> list[int, int]:
-        """
-        Receives 2 grids (2d numpy arrays), representing your own fleet and the fleet of the opponent.
-        On each grid, the following characters are present:
-        - " " represents an empty cell
-        - "S" represents a ship (only visible on your own fleet, hidden on opponent fleet)
-        - "X" represents a hit
-        - "o" represents a miss
-
-        Write a function that returns a list of 2 integers representing the position to shoot at.
-
-        Example turn (with full visibility)
-        do shot at 4, 1
-        dummy shot at 2, 2
-        do's fleet:
-        + + + + + + + +
-        + S S         +
-        + S S         +
-        + S S X       +
-        + S S S S S   +
-        +             +
-        +             +
-        + + + + + + + +
-        dummy's fleet:
-        + + + + + + + +
-        + S S         +
-        + S S         +
-        + S S S       +
-        + S S S S S   +
-        +   o         +
-        +             +
-        + + + + + + + +
-
-        The grid size is always the same between games (6x6)
-
-        Good luck with this age-old classic!
-        """
-
-            # If there is a hit, shoot around that hit
-        def get_clusters(hits):
-            clusters, seen = [], set()
-            for h in hits:
-                if h in seen:
-                    continue
-                queue = [h]
-                seen.add(h)
-                cluster = []
-                while queue:
-                    x, y = queue.pop()
-                    cluster.append((x, y))
-                    for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
-                        nx, ny = x+dx, y+dy
-                        if (nx, ny) in hits and (nx, ny) not in seen:
-                            seen.add((nx, ny))
-                            queue.append((nx, ny))
-                clusters.append(cluster)
-            return clusters
-
-        # --- helper to find all empty neighbors, extending hits along orientation ---
-        def get_adjacent(cluster):
-            candidates = set()
-            if len(cluster) > 1:
-                xs = [x for x, _ in cluster]
-                ys = [y for _, y in cluster]
-                if len(set(xs)) == 1:
-                    # horizontal
-                    r = xs[0]
-                    for c in (min(ys)-1, max(ys)+1):
-                        if 0 <= c < grid_size and opponent_fleet[r, c] == " ":
-                            candidates.add((r, c))
-                else:
-                    # vertical
-                    c = ys[0]
-                    for r in (min(xs)-1, max(xs)+1):
-                        if 0 <= r < grid_size and opponent_fleet[r, c] == " ":
-                            candidates.add((r, c))
-            else:
-                # single hit: all four directions
-                x, y = cluster[0]
-                for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
-                    nx, ny = x+dx, y+dy
-                    if 0 <= nx < grid_size and 0 <= ny < grid_size and opponent_fleet[nx, ny] == " ":
-                        candidates.add((nx, ny))
-            return list(candidates)
-
-        # --- 1) reconstruct remaining ship lengths ---
-        remaining = [2, 2, 3, 5]
-        hits = list(zip(*np.where(opponent_fleet == "X")))
-        clusters = get_clusters(hits)
-
-        # any cluster whose length matches a ship AND has no blank extension is assumed sunk
-        for cl in clusters:
-            L = len(cl)
-            if L in remaining:
-                # check if it can still extend
-                if not get_adjacent(cl):
-                    remaining.remove(L)
-
-        # --- 2) target mode: finish off any live cluster ---
-        for cl in clusters:
-            # only clusters with at least one adjacent blank are still “live”
-            adj = get_adjacent(cl)
-            if adj:
-                # deterministic choice: smallest (row,col)
-                x, y = sorted(adj)[0]
-                return [x, y]
-
-        # --- 3) hunt mode: simple parity scan ---
-        for i in range(grid_size):
-            for j in range(grid_size):
-                if (i + j) % 2 == 0 and opponent_fleet[i, j] == " ":
-                    return [i, j]
-
-        # --- 4) fallback: first empty cell ---
-        for i in range(grid_size):
-            for j in range(grid_size):
-                if opponent_fleet[i, j] == " ":
-                    return [i, j]
-
-        # no moves left
-        return [0, 0]
-
-
-    def wonky_rps(
-        self,
-        wonk_level: Literal[
-            "wonk",
-            "turbowonk",
-            "hyperwonk",
-            "golden wonk",
-            "golden turbowonk",
-            "golden hyperwonk",
-        ],
-        wonky_hand: Literal["r", "p", "s"],
-        history: pd.DataFrame,
-    ) -> Literal["r", "p", "s"]:
-        """
-        Rock, paper, scissors, but with a twist!
-
-        Each round is just like normal rock paper scissors, with the usual rules:
-        - rock beats scissors
-        - scissors beats paper
-        - paper beats rock
-        - if both players choose the same hand, it is a tie
-
-        If you win a round, you get 100 points. Most points at the end wins!
-
-        However, each round one of the hands is chosen to be the "wonky hand".
-        If you win with the wonky hand, your points are multiplied by an unknown "wonkfactor".
-        A hand can be:
-        - wonk level "wonk": Points are multiplied by a random wonkfactor between -1 and 2
-        - wonk level "turbowonk" (~25% chance): Points are multiplied by a random wonkfactor between -10 and 20
-        - wonk level "hyperwonk" (~5% chance): Points are multiplied by a random wonkfactor between -50 and 100
-
-        Finally there is a 20% chance the wonk level is "golden".
-        In this case, the wonkfactor is the absolute of what it would have been - so always positive!.
-
-        Each round you also get the complete history of the current game in a pandas dataframe.
-        It has a row for each played round.
-        It has the following columns:
-        - `your name`: Your choice in this round ("r", "p", or "s")
-        - `opponents name`: the choice of your opponent in this round ("r", "p", or "s")
+        You receive the complete history of the game in a pandas dataframe, with a row for each played round, and the following columns:
+        - `your name`: Your choice in this round ("r", "p", "s", "g", or "d")
+        - `opponents name`: the choice of your opponent in this round ("r", "p", "s", "g", or "d")
         - `your name`_score: Your score after this round (int)
         - `opponents name`_score: the score of your opponent after this round (int)
-        - wonk_level: the wonk level of this round ("wonk", "turbowonk", "hyperwonk", "golden wonk", "golden turbowonk", "golden hyperwonk")
-        - wonky_hand: the wonky hand of this round ("r", "p", or "s")
-        - wonkfactor: the wonk factor of this round (float)
+        - `your name`_reload_timer: the number of rounds until your gun is reloaded and you can use GUN again
+                                    (so if this is 1 at the LAST round in the table you can use GUN in THIS round)
+        - `opponents name`_reload_timer: the number of rounds until your opponent's gun is reloaded and they can use GUN again
+                                         (so if this is 1 at the LAST round in the table your opponent can use GUN in THIS round)
         - rounds_remaining: the number of rounds remaining in the game (int)
 
-        Note that `your name` and `opponents name` are the names of the players in the game and they and their order can change from game to game.
+        Example input:
 
-        Example:
+          dummy Opponent dummy_score Opponent_score dummy_reload_timer Opponent_reload_timer rounds_remaining  dummy_bet  Opponent_bet
+        0     g        s        -100            200                  4                     4                4      100.0         100.0
+        1     s        p          90            100                  3                     3                3      100.0         100.0
+        2     s        p         290              0                  2                     2                2      100.0         100.0
+        3     g        r         190            200                  1                     1                1      100.0         100.0
+        4     g        g         390            100                  0                     0                0      100.0         100.0
 
-          do dummy do_score dummy_score   wonk_level wonky_hand  wonkfactor rounds_remaining
-        0  p     r      100           0    hyperwonk          s  -21.798346                4
-        1  p     p      100           0  golden wonk          r    0.527926                3
-        2  s     s      100           0         wonk          s    0.839399                2
-        3  r     p      100        -700    turbowonk          p   -7.004510                1
-        4  r     p      100        -600    hyperwonk          s   -6.366723                0
+        A full game is always 400 rounds.
+        If you return an invalid move (e.g. GUN when not reloaded, lending more than the allowed 2000 per round), you forfeit the round and your opponent wins by default.
 
-        Write a function that returns "r", "p", or "s" based on the current state of the game.
-
-        A full game is always 400 turns.
-
-        Good luck with this fun game of risk management!
+        Good luck with this extremely logical and strategic game of ROCK PAPER SCISSORS GUN DUCK!
         """
-
-        # golden_round = wonk_level.startswith("golden")
-        # if golden_round:
-        #     return wonky_hand
-        # elif wonk_level == "wonk":
-        #     return self.rps_get_winner(wonky_hand)
-        # else:
-        #     return str(np.random.choice(["r", "p", "s"]))
-
-        # # return str(np.random.choice(["r", "p", "s"]))
-
-        if history.empty:
-            return np.random.choice(["r", "p", "s"])
-
-        player_cols = [col for col in history.columns if col.endswith("_score")]
-        me = player_cols[0][:-6]
-        opponent = player_cols[1][:-6]
-
-        my_score = history[f"{me}_score"].iloc[-1]
-        opp_score = history[f"{opponent}_score"].iloc[-1]
-        score_diff = my_score - opp_score
-        risk_aversion = 0.1 + 0.001 * score_diff
-
-        opp_moves = history[opponent].dropna()
-        freq = opp_moves.value_counts(normalize=True).to_dict()
-        opp_probs = {k: freq.get(k, 0.0) for k in ["r", "p", "s"]}
-
-        beats = {"r": "s", "p": "r", "s": "p"}
-
-        relevant_rows = history[history["wonk_level"] == wonk_level]
-        if len(relevant_rows) >= 5:
-            wonk_mean = relevant_rows["wonkfactor"].mean()
-            wonk_std = relevant_rows["wonkfactor"].std()
-        else:
-            wonk_mean, wonk_std = self.wonk_profiles.get(wonk_level, (1.0, 0.0))
-
-        def expected_score(move: str) -> float:
-            win_prob = sum(prob for opp, prob in opp_probs.items() if beats[move] == opp)
-            base_win_score = 100
-
-            if move == wonky_hand:
-                score = base_win_score * wonk_mean * win_prob
-                penalty = risk_aversion * (wonk_std * win_prob)
-                return score - penalty
-            else:
-                return base_win_score * win_prob
-
-        return max(["r", "p", "s"], key=expected_score)
-
-
-
-    def rps_get_winner(self, hand: Literal["r", "p", "s"]) -> Literal["r", "p", "s"]:
-        """
-        Returns the winning hand of the given hand.
-        """
-        if hand == "r":
-            return "p"
-        elif hand == "p":
-            return "s"
-        elif hand == "s":
-            return "r"
-        else:
-            raise ValueError("Invalid hand")
+        return (str(np.random.choice(["r", "p", "s", "g", "d"])), 100)

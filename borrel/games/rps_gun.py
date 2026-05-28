@@ -94,7 +94,9 @@ class RPSPlayer:
 
     def pay_interest(self):
         if self.score < 0:
-            interest = int(-self.score * 0.1)  # 10% interest on negative score
+            interest = int(
+                -self.score * INTEREST_RATE
+            )  # 10% interest on negative score
             self.score -= interest
             return interest
 
@@ -233,8 +235,7 @@ class RPS_Gun:
 
         return "continue"
 
-    def reset(self):
-        self.scores = {self.player1.name: 0, self.player2.name: 0}
+    def init_history(self):
         self.history = pd.DataFrame(
             columns=[
                 self.player1.name,
@@ -247,8 +248,15 @@ class RPS_Gun:
             ]
         )
 
+    @property
+    def scores(self):
+        return {
+            self.player1.name: self.player1.score,
+            self.player2.name: self.player2.score,
+        }
+
     def play_game(self, rounds: int = 400):
-        self.reset()
+        self.init_history()
 
         for i in range(rounds):
             self.play_round(rounds - i - 1)
