@@ -12,6 +12,8 @@ You should implement the functions in `borrel/policies/name.py` (where `name` is
 
 For ease of use you can just push to main, but do make very sure you do not push anything else than your `name.py` file. Otherwise, you get points deducted!
 
+### AGAIN, MAKE SURE TO ONLY PUSH YOUR `name.py` FILE. Otherwise, you get points deducted!
+
 INSTALLATION INSTRUCTIONS
 
 Run `pyenv install 3.11.5` (or another 3.11.x)
@@ -39,8 +41,8 @@ Run `poetry install`
 
 - I expect time to be quite limited, so divide your time wisely between the games.
 - You can store persistent-between-turns data in your class.
-- `testing.ipynb` is set up to be used during development. It allows you to test your code against a random dummy player, as well as against other real players once they have pushed their policies.
-- After the first round you can pull and run `play.ipynb` to see how your code performs against the other players' policies from the previous round.
+- `notebooks/testing.ipynb` is set up to be used during development. It allows you to test your code against a random dummy player, as well as against other real players once they have pushed their policies.
+- After the first round you can pull and run `notebooks/play.ipynb` to see how your code performs against the other players' policies from the previous round.
 - Ask Carlos or Jordy if you have any questions!
 
 ### RESULTS
