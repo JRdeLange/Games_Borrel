@@ -14,12 +14,7 @@ class Mees:
         # Each full run of a game will use a fresh instance of this class.
         # So for for example battleship, a new instance will be created for each game, but not for each turn.
 
-        # Markov transition table for rps_gun: context -> Counter of opponent's next move.
-        # Keys are 1-grams (last opp move) and 2-grams (tuple of last 2 opp moves).
-        from collections import Counter as _Counter
-        from collections import defaultdict
-
-        self._rps_markov: dict = defaultdict(lambda: _Counter())
+        self._rps_state: dict | None = None
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
@@ -295,40 +290,77 @@ class Mees:
                             changed = True
             return total
 
-        legal_h = [
-            (r, c)
-            for r in range(size + 1)
-            for c in range(size)
-            if not horizontal_lines[r, c]
-        ]
-        legal_v = [
-            (r, c)
-            for r in range(size)
-            for c in range(size + 1)
-            if not vertical_lines[r, c]
-        ]
+        legal_h = [(r, c) for r in range(size + 1) for c in range(size) if not horizontal_lines[r, c]]
+        legal_v = [(r, c) for r in range(size) for c in range(size + 1) if not vertical_lines[r, c]]
+        all_moves = [("h", r, c) for r, c in legal_h] + [("v", r, c) for r, c in legal_v]
 
-        # 1. Complete any available box immediately
-        for r, c in legal_h:
-            if would_complete("h", r, c):
-                return {"orientation": "h", "row": r, "col": c}
-        for r, c in legal_v:
-            if would_complete("v", r, c):
-                return {"orientation": "v", "row": r, "col": c}
+        def immediate_closed(orient, r, c, hl=horizontal_lines, vl=vertical_lines):
+            hl2, vl2 = hl.copy(), vl.copy()
+            if orient == "h":
+                hl2[r, c] = True
+            else:
+                vl2[r, c] = True
+            def s(br, bc):
+                return int(hl2[br, bc]) + int(hl2[br + 1, bc]) + int(vl2[br, bc]) + int(vl2[br, bc + 1])
+            return sum(1 for br, bc in adjacent_boxes(orient, r, c) if s(br, bc) == 4)
 
-        # 2. Play a safe move (doesn't give opponent a 3-sided box)
-        safe = [("h", r, c) for r, c in legal_h if not would_create_3sided("h", r, c)]
-        safe += [("v", r, c) for r, c in legal_v if not would_create_3sided("v", r, c)]
-        if safe:
-            orient, r, c = safe[np.random.randint(len(safe))]
-            return {"orientation": orient, "row": r, "col": c}
+        def opp_best_take(hl, vl):
+            best = 0
+            for r2, c2 in [(r, c) for r in range(size + 1) for c in range(size) if not hl[r, c]]:
+                best = max(best, immediate_closed("h", r2, c2, hl, vl))
+            for r2, c2 in [(r, c) for r in range(size) for c in range(size + 1) if not vl[r, c]]:
+                best = max(best, immediate_closed("v", r2, c2, hl, vl))
+            return best
 
-        # 3. All moves are dangerous — give away the shortest chain
-        all_moves = [("h", r, c) for r, c in legal_h] + [
-            ("v", r, c) for r, c in legal_v
-        ]
-        best = min(all_moves, key=lambda m: simulate_opp_capture(*m))
-        return {"orientation": best[0], "row": best[1], "col": best[2]}
+        # 1. Among scoring moves, pick the one that minimizes opponent counter-play
+        scoring = [(o, r, c) for o, r, c in all_moves if would_complete(o, r, c)]
+        if scoring:
+            best_move = None
+            best_score = -1e18
+            for o, r, c in scoring:
+                now = immediate_closed(o, r, c)
+                hl2 = horizontal_lines.copy()
+                vl2 = vertical_lines.copy()
+                if o == "h":
+                    hl2[r, c] = True
+                else:
+                    vl2[r, c] = True
+                opp_take = opp_best_take(hl2, vl2)
+                thirds = int(would_create_3sided(o, r, c))
+                score = 500.0 * now - 180.0 * opp_take - 40.0 * thirds + float(np.random.uniform(0, 1e-3))
+                if score > best_score:
+                    best_score = score
+                    best_move = {"orientation": o, "row": r, "col": c}
+            return best_move
+
+        # 2. Safe moves: pick the one that minimizes opponent's next-turn gain
+        safe = [(o, r, c) for o, r, c in all_moves if not would_create_3sided(o, r, c)]
+        if not safe:
+            # All moves dangerous — minimize chain given away
+            best = min(all_moves, key=lambda m: simulate_opp_capture(*m))
+            return {"orientation": best[0], "row": best[1], "col": best[2]}
+
+        best_move = None
+        best_score = -1e18
+        for o, r, c in safe:
+            hl2 = horizontal_lines.copy()
+            vl2 = vertical_lines.copy()
+            if o == "h":
+                hl2[r, c] = True
+            else:
+                vl2[r, c] = True
+            opp_take = opp_best_take(hl2, vl2)
+            thirds = int(would_create_3sided(o, r, c))
+            center_dist = (
+                abs(r - size / 2) + abs(c - (size - 1) / 2)
+                if o == "h"
+                else abs(r - (size - 1) / 2) + abs(c - size / 2)
+            )
+            score = -260.0 * opp_take - 70.0 * thirds - 2.0 * center_dist + float(np.random.uniform(0, 1e-3))
+            if score > best_score:
+                best_score = score
+                best_move = {"orientation": o, "row": r, "col": c}
+        return best_move
 
     def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
         """
@@ -477,45 +509,122 @@ class Mees:
             and str(board.loc[i, "space"]).startswith(self.name + "_")
         }
 
-        def dist_to_home(pos):
-            return (home_idx - pos) % board_length
+        opp_home_map = {
+            p: board[board["home"] == p].index[0]
+            for p in info["pieces_at_home"].keys()
+            if p != self.name
+        }
+
+        def dist_to_home(player_home_idx, pos):
+            return (player_home_idx - pos) % board_length
 
         def is_own(idx):
             sp = board.loc[idx, "space"]
             return sp is not None and str(sp).startswith(self.name + "_")
 
-        def opp_progress(idx):
-            sp = board.loc[idx, "space"]
-            if sp is None or str(sp).startswith(self.name + "_"):
-                return 0
-            opp = "_".join(str(sp).split("_")[:-1])
-            opp_home = board[board["home"] == opp].index[0]
-            return board_length - (opp_home - idx) % board_length
+        def build_opp_positions(exclude_piece=None):
+            out = {p: [] for p in opp_home_map}
+            for i in board.index:
+                sp = board.loc[i, "space"]
+                if sp is None:
+                    continue
+                piece_name = str(sp)
+                if exclude_piece is not None and piece_name == exclude_piece:
+                    continue
+                owner = "_".join(piece_name.split("_")[:-1])
+                if owner in out:
+                    out[owner].append(i)
+            return out
+
+        def capture_risk_probability(target_idx, opp_positions):
+            not_captured = 1.0
+            for positions in opp_positions.values():
+                rolls_that_hit = sum(
+                    1 for pos in positions
+                    if 1 <= (target_idx - pos) % board_length <= 6
+                )
+                p_cap = min(1.0, rolls_that_hit / 6.0)
+                not_captured *= 1.0 - p_cap
+            return 1.0 - not_captured
 
         FINISH_SCORE = 100_000
-        PROGRESS_WEIGHT = 100
-        CAPTURE_WEIGHT = 50
-        DEPLOY_BASE = 150
-
+        my_finished_count = len(finished)
         candidates = []
 
         for pn, pos in my_on_board.items():
             new_pos = (pos + dice_roll) % board_length
             if is_own(new_pos):
                 continue  # would send own piece home — skip
-            if dist_to_home(pos) == dice_roll:
-                candidates.append((pn, FINISH_SCORE))
+
+            score = 0.0
+            target_sp = board.loc[new_pos, "space"]
+            target_home = board.loc[new_pos, "home"]
+            removed_piece = None
+
+            if target_home == self.name:
+                score += FINISH_SCORE
+                if my_finished_count == 3:
+                    score += 35_000.0
+                candidates.append((pn, score))
                 continue
-            # Gain = reduction in steps to home; negative when overshooting
-            gain = dist_to_home(pos) - dist_to_home(new_pos)
-            cap = opp_progress(new_pos) * CAPTURE_WEIGHT
-            candidates.append((pn, gain * PROGRESS_WEIGHT + cap))
+
+            # Progress toward home
+            before = dist_to_home(home_idx, pos)
+            after = dist_to_home(home_idx, new_pos)
+            score += 50.0 * (before - after)
+
+            # Capture bonus
+            if target_sp is not None and not str(target_sp).startswith(self.name + "_"):
+                piece_name = str(target_sp)
+                removed_piece = piece_name
+                owner = "_".join(piece_name.split("_")[:-1])
+                opp_home = opp_home_map.get(owner, 0)
+                opp_dist = dist_to_home(opp_home, new_pos)
+                opp_fin = len(info["pieces_finished"].get(owner, []))
+                score += 1500.0 + 60.0 * (board_length - opp_dist) + 330.0 * opp_fin
+                if opp_dist <= 6:
+                    score += 900.0
+                if opp_fin >= 3:
+                    score += 1500.0
+
+            # Risk at target position after move
+            opp_after = build_opp_positions(exclude_piece=removed_piece)
+            risk_after = capture_risk_probability(new_pos, opp_after)
+            my_value = board_length - dist_to_home(home_idx, new_pos)
+            score -= risk_after * (260.0 + 42.0 * my_value)
+
+            # Bonus for escaping current danger
+            opp_now = build_opp_positions()
+            risk_now = capture_risk_probability(pos, opp_now)
+            score += 170.0 * (risk_now - risk_after)
+
+            score += float(np.random.uniform(0.0, 1e-3))
+            candidates.append((pn, score))
 
         if dice_roll == 6 and at_home:
             pn = at_home[0]
             if not is_own(start_pos):
-                cap = opp_progress(start_pos) * CAPTURE_WEIGHT
-                candidates.append((pn, DEPLOY_BASE + cap))
+                score = 260.0 if len(my_on_board) < 2 else 110.0
+                target_sp = board.loc[start_pos, "space"]
+                removed_piece = None
+                if target_sp is not None and not str(target_sp).startswith(self.name + "_"):
+                    piece_name = str(target_sp)
+                    removed_piece = piece_name
+                    owner = "_".join(piece_name.split("_")[:-1])
+                    opp_home = opp_home_map.get(owner, 0)
+                    opp_dist = dist_to_home(opp_home, start_pos)
+                    opp_fin = len(info["pieces_finished"].get(owner, []))
+                    score += 1500.0 + 60.0 * (board_length - opp_dist) + 330.0 * opp_fin
+                    if opp_dist <= 6:
+                        score += 900.0
+                    if opp_fin >= 3:
+                        score += 1500.0
+                opp_after = build_opp_positions(exclude_piece=removed_piece)
+                risk_after = capture_risk_probability(start_pos, opp_after)
+                my_value = board_length - dist_to_home(home_idx, start_pos)
+                score -= risk_after * (260.0 + 42.0 * my_value)
+                score += float(np.random.uniform(0.0, 1e-3))
+                candidates.append((pn, score))
 
         if candidates:
             return max(candidates, key=lambda x: x[1])[0]
@@ -598,40 +707,19 @@ class Mees:
 
         Good luck with this extremely logical and strategic game of ROCK PAPER SCISSORS GUN DUCK!
         """
-        # Expected value matrix: WIN[(my, opp)] = 1 win / -1 lose / 0 tie-or-coinflip
+        MOVES = ["r", "p", "s", "g", "d"]
         WIN = {
-            ("r", "r"): 0,
-            ("r", "p"): -1,
-            ("r", "s"): 1,
-            ("r", "g"): 0,
-            ("r", "d"): -1,
-            ("p", "r"): 1,
-            ("p", "p"): 0,
-            ("p", "s"): -1,
-            ("p", "g"): -1,
-            ("p", "d"): 1,
-            ("s", "r"): -1,
-            ("s", "p"): 1,
-            ("s", "s"): 0,
-            ("s", "g"): -1,
-            ("s", "d"): 1,
-            ("g", "r"): 0,
-            ("g", "p"): 1,
-            ("g", "s"): 1,
-            ("g", "g"): 0,
-            ("g", "d"): -1,
-            ("d", "r"): 1,
-            ("d", "p"): -1,
-            ("d", "s"): -1,
-            ("d", "g"): 1,
-            ("d", "d"): 0,
+            ("r", "r"): 0,  ("r", "p"): -1, ("r", "s"): 1,  ("r", "g"): 0,  ("r", "d"): -1,
+            ("p", "r"): 1,  ("p", "p"): 0,  ("p", "s"): -1, ("p", "g"): -1, ("p", "d"): 1,
+            ("s", "r"): -1, ("s", "p"): 1,  ("s", "s"): 0,  ("s", "g"): -1, ("s", "d"): 1,
+            ("g", "r"): 0,  ("g", "p"): 1,  ("g", "s"): 1,  ("g", "g"): 0,  ("g", "d"): -1,
+            ("d", "r"): 1,  ("d", "p"): -1, ("d", "s"): -1, ("d", "g"): 1,  ("d", "d"): 0,
         }
 
         if len(history) == 0:
-            # First round: gun timer starts at 5, decremented to 4, so can't shoot yet.
             return ("p", 0)
 
-        # Resolve column names dynamically
+        # Resolve column names
         timer_cols = [c for c in history.columns if c.endswith("_reload_timer")]
         my_timer_col = self.name + "_reload_timer"
         opp_timer_col = next(c for c in timer_cols if c != my_timer_col)
@@ -643,91 +731,140 @@ class Mees:
         opp_last_timer = int(last[opp_timer_col])
         opp_last_choice = str(last[opp_name])
 
-        # Timer shown in history is AFTER decrement for that round, BEFORE shooting.
         can_gun = (my_last_timer == 1) or (my_last_timer == 0 and my_last_choice != "g")
-        opp_can_gun = (opp_last_timer == 1) or (
-            opp_last_timer == 0 and opp_last_choice != "g"
-        )
-
+        opp_can_gun = (opp_last_timer == 1) or (opp_last_timer == 0 and opp_last_choice != "g")
         my_score = int(last[self.name + "_score"])
+        rounds_remaining = int(last["rounds_remaining"])
 
+        # Init or reset state on new game
+        if self._rps_state is None or len(history) < self._rps_state["round"]:
+            self._rps_state = {
+                "round": 0,
+                "op_last": None,
+                "op_prev": None,
+                "my_last": None,
+                "global_counts": {},
+                "phase_counts": {},
+                "after_op_counts": {},
+                "after_my_counts": {},
+                "bigram_counts": {},
+            }
+
+        st = self._rps_state
         opp_choices = history[opp_name].tolist()
+        my_choices = history[self.name].tolist()
 
-        # Update Markov transition table with latest observation.
-        # Key on last-1 and last-2 opponent moves → predicted next move.
-        n = len(opp_choices)
-        if n >= 2:
-            self._rps_markov[opp_choices[-2]][opp_choices[-1]] += 1
-        if n >= 3:
-            self._rps_markov[(opp_choices[-3], opp_choices[-2])][opp_choices[-1]] += 1
+        # Incrementally update all 5 signals from unprocessed history rows
+        while st["round"] < len(history):
+            i = st["round"]
+            last_op = opp_choices[i]
+            last_my = my_choices[i]
+            phase = i % 6
 
-        def _best_counter(counts: dict) -> tuple[str, float]:
-            """Given a move→freq dict, return (best_my_move, best_ev) ignoring gun moves."""
-            counts_no_gun = {k: v for k, v in counts.items() if k != "g"}
-            total = sum(counts_no_gun.values())
-            available = ["r", "p", "s", "d"]
-            if total < 3:
-                return "p", 0.0
-            best_choice, best_ev = "p", -999.0
-            for mc in available:
-                ev = sum(
-                    WIN.get((mc, oc), 0) * cnt / total
-                    for oc, cnt in counts_no_gun.items()
-                )
-                if ev > best_ev:
-                    best_ev, best_choice = ev, mc
-            return best_choice, best_ev
+            st["global_counts"][last_op] = st["global_counts"].get(last_op, 0) + 1
+            if phase not in st["phase_counts"]:
+                st["phase_counts"][phase] = {}
+            st["phase_counts"][phase][last_op] = st["phase_counts"][phase].get(last_op, 0) + 1
 
-        # Decision logic
+            if st["op_last"] is not None:
+                aoc = st["after_op_counts"].setdefault(st["op_last"], {})
+                aoc[last_op] = aoc.get(last_op, 0) + 1
+
+            if st["my_last"] is not None:
+                amc = st["after_my_counts"].setdefault(st["my_last"], {})
+                amc[last_op] = amc.get(last_op, 0) + 1
+
+            if st["op_prev"] is not None and st["op_last"] is not None:
+                bgc = st["bigram_counts"].setdefault((st["op_prev"], st["op_last"]), {})
+                bgc[last_op] = bgc.get(last_op, 0) + 1
+
+            st["op_prev"] = st["op_last"]
+            st["op_last"] = last_op
+            st["my_last"] = last_my
+            st["round"] += 1
+
+        legal_moves = ["r", "p", "s", "d"]
         if can_gun:
-            choice = "g"
-            confidence = 0.60
-        elif opp_can_gun:
-            choice = "d"
-            confidence = 0.60
+            legal_moves.append("g")
+
+        def probs(counts: dict, alpha: float = 1.0) -> dict:
+            total = sum(counts.get(m, 0) for m in MOVES) + alpha * len(MOVES)
+            return {m: (counts.get(m, 0) + alpha) / total for m in MOVES}
+
+        n = st["round"]
+        w_global = 0.35
+        w_phase = 0.15
+        w_after_op = min(0.30, 0.08 + n / 800)
+        w_after_my = min(0.20, 0.05 + n / 1000)
+
+        bigram_key = (st["op_prev"], st["op_last"]) if st["op_prev"] is not None else None
+        bigram_data = st["bigram_counts"].get(bigram_key, {}) if bigram_key else {}
+        bigram_n = sum(bigram_data.values())
+        w_bigram = min(0.15, bigram_n / 80) if bigram_n >= 5 else 0.0
+
+        w_sum = w_global + w_phase + w_after_op + w_after_my + w_bigram
+        p_global = probs(st["global_counts"], alpha=2.0)
+        p_phase = probs(st["phase_counts"].get(n % 6, {}), alpha=1.0)
+        p_after_op = probs(st["after_op_counts"].get(st["op_last"], {}), alpha=1.0)
+        p_after_my = probs(st["after_my_counts"].get(st["my_last"], {}), alpha=1.0)
+        p_bigram = probs(bigram_data, alpha=1.0)
+
+        op_dist = {
+            m: (
+                w_global * p_global[m] + w_phase * p_phase[m]
+                + w_after_op * p_after_op[m] + w_after_my * p_after_my[m]
+                + w_bigram * p_bigram[m]
+            ) / w_sum
+            for m in MOVES
+        }
+
+        # Zero out gun probability when opponent can't fire
+        if not opp_can_gun:
+            non_g = sum(op_dist[m] for m in ["r", "p", "s", "d"])
+            if non_g > 0:
+                for m in ["r", "p", "s", "d"]:
+                    op_dist[m] /= non_g
+            op_dist["g"] = 0.0
+
+        # Compute expected utility per legal move
+        utils = {
+            m: sum(WIN.get((m, op), 0) * p for op, p in op_dist.items())
+            for m in legal_moves
+        }
+
+        # Softmax action selection — less exploitable than pure argmax
+        tau = max(0.08, 0.35 - n / 1800)
+        max_u = max(utils.values())
+        weights = {m: float(np.exp((utils[m] - max_u) / tau)) for m in legal_moves}
+        z = sum(weights.values())
+        policy = {m: weights[m] / z for m in legal_moves}
+        chosen = str(np.random.choice(legal_moves, p=[policy[m] for m in legal_moves]))
+
+        # Edge and entropy for bet sizing
+        p_win = p_lose = 0.0
+        for op, p in op_dist.items():
+            wv = WIN.get((chosen, op), 0)
+            if wv == 1:
+                p_win += p
+            elif wv == -1:
+                p_lose += p
+            else:
+                p_win += 0.5 * p
+                p_lose += 0.5 * p
+
+        edge = p_win - p_lose
+        entropy = -sum(p * np.log(p + 1e-12) for p in op_dist.values()) / np.log(5)
+        confidence = float(np.clip(1.0 - entropy, 0.0, 1.0))
+
+        max_legal_bet = max(0, int(my_score + 2000))
+        if edge <= 0:
+            bet = 0
         else:
-            # Try Markov predictions in order of specificity: 2-gram, 1-gram, flat recent.
-            from collections import Counter
+            urgency = 1.35 if rounds_remaining < 40 else 1.0
+            if rounds_remaining < 15:
+                urgency = 1.7
+            raw_bet = max_legal_bet * edge * (0.15 + 0.85 * confidence) * 0.55 * urgency
+            bet = int(np.clip(raw_bet, 0, max_legal_bet))
 
-            predicted: dict | None = None
-            pred_weight = 0
-
-            # 2-gram: last two opponent moves predict next
-            if n >= 2:
-                key2 = (opp_choices[-2], opp_choices[-1])
-                c2 = self._rps_markov.get(key2)
-                if c2 and sum(c2.values()) >= 5:
-                    predicted = dict(c2)
-                    pred_weight = sum(c2.values())
-
-            # 1-gram fallback
-            if predicted is None and n >= 1:
-                c1 = self._rps_markov.get(opp_choices[-1])
-                if c1 and sum(c1.values()) >= 5:
-                    predicted = dict(c1)
-                    pred_weight = sum(c1.values())
-
-            # Flat recent-20 fallback
-            if predicted is None:
-                predicted = dict(Counter(opp_choices[-20:]))
-                pred_weight = sum(predicted.values())
-
-            choice, best_ev = _best_counter(predicted)
-
-            # Scale confidence by how many samples back the prediction and its EV.
-            base_conf = 0.5 + best_ev * 0.15
-            # Markov predictions with many samples get a small bonus.
-            markov_bonus = min(0.10, pred_weight / 500) if pred_weight >= 5 else 0.0
-            confidence = base_conf + markov_bonus
-
-        # Betting: EV of a bet X = (2*p - 1) * X.
-        max_bet = max(0, my_score) + 2000
-        if confidence >= 0.65:
-            raw_bet = max(200, my_score // 4) if my_score > 0 else 200
-        elif confidence >= 0.55:
-            raw_bet = 100
-        else:
-            raw_bet = 0
-
-        bet = int(max(0, min(raw_bet, max_bet)))
-        return (cast(Literal["r", "p", "s", "g", "d"], choice), bet)
+        st["my_last"] = chosen
+        return (cast(Literal["r", "p", "s", "g", "d"], chosen), bet)
