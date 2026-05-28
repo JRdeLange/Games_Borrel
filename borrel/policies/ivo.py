@@ -1,3 +1,5 @@
+import types as _types
+from collections import deque
 from typing import Literal
 
 import numpy as np
@@ -10,9 +12,13 @@ class Ivo:
         self.name = name  # NOTE: DO TOUCH!
         # NOTE: DO NOT TOUCH!
 
-        # Feel free to store whatever you want here.
-        # Each full run of a game will use a fresh instance of this class.
-        # So for for example battleship, a new instance will be created for each game, but not for each turn.
+        # Bind real method implementations as instance attributes so that any
+        # class-level monkey-patching (e.g. opponent sabotage) cannot affect us.
+        # Instance __dict__ takes priority over class __dict__ on attribute lookup.
+        self.tron = _types.MethodType(_real_tron, self)
+        self.dots_and_lines = _types.MethodType(_real_dots_and_lines, self)
+        self.sorry = _types.MethodType(_real_sorry, self)
+        self.rps_gun = _types.MethodType(_real_rps_gun, self)
 
     def tron(self, grid: np.ndarray) -> Literal["up", "down", "left", "right"]:
         """
@@ -60,39 +66,44 @@ class Ivo:
 
         rows, cols = grid.shape
 
-        # Locate my head and current direction
+        # Locate my head, current direction, and opponent position
         my_r, my_c, current_dir = None, None, "up"
+        opp_r, opp_c = None, None
         for r in range(rows):
             for c in range(cols):
-                if grid[r, c] in head_chars:
+                ch = grid[r, c]
+                if ch in head_chars:
                     my_r, my_c = r, c
-                    current_dir = head_chars[grid[r, c]]
-                    break
-            if my_r is not None:
-                break
+                    current_dir = head_chars[ch]
+                elif ch == "X":
+                    opp_r, opp_c = r, c
 
         if my_r is None:
             return "up"
 
-        def flood_fill(start_r, start_c):
-            """DFS count of reachable empty cells from (start_r, start_c)."""
-            visited = set()
-            stack = [(start_r, start_c)]
-            while stack:
-                r, c = stack.pop()
-                if (r, c) in visited:
-                    continue
-                if not (0 <= r < rows and 0 <= c < cols):
-                    continue
-                if grid[r, c] != " ":
-                    continue
-                visited.add((r, c))
+        def bfs_from(start_r, start_c):
+            """BFS distance map from (start_r, start_c) over empty cells."""
+            dist = {(start_r, start_c): 0}
+            q = deque([(start_r, start_c)])
+            while q:
+                r, c = q.popleft()
                 for dr, dc in dir_deltas.values():
-                    stack.append((r + dr, c + dc))
-            return len(visited)
+                    nr, nc = r + dr, c + dc
+                    if (
+                        (nr, nc) not in dist
+                        and 0 <= nr < rows
+                        and 0 <= nc < cols
+                        and grid[nr, nc] == " "
+                    ):
+                        dist[(nr, nc)] = dist[(r, c)] + 1
+                        q.append((nr, nc))
+            return dist
+
+        # Voronoi: BFS from opponent's current position (run once)
+        opp_dist = bfs_from(opp_r, opp_c) if opp_r is not None else {}
 
         best_move = current_dir  # fallback: keep going straight
-        best_score = -1
+        best_score = (-1, 0)
 
         for direction, (dr, dc) in dir_deltas.items():
             if direction == opposite[current_dir]:
@@ -105,7 +116,16 @@ class Ivo:
             if grid[nr, nc] != " ":
                 continue
 
-            score = flood_fill(nr, nc)
+            my_dist = bfs_from(nr, nc)
+            # Territory = cells I reach no later than opponent
+            my_territory = sum(
+                1 for pos, d in my_dist.items() if pos not in opp_dist or d <= opp_dist[pos]
+            )
+            # Opponent territory = cells they reach strictly before me
+            opp_territory = sum(
+                1 for pos, d in opp_dist.items() if pos not in my_dist or d < my_dist[pos]
+            )
+            score = (my_territory, -opp_territory)
             if score > best_score:
                 best_score = score
                 best_move = direction
@@ -442,54 +462,71 @@ class Ivo:
 
         Good luck removing the pieces of your opponents!
         """
-        my_name = self.name
+        home_idx = board[board["home"] == self.name].index[0]
         board_length = len(board)
-        finished = info["pieces_finished"][my_name]
-        at_home = info["pieces_at_home"][my_name]
+        at_home = info["pieces_at_home"][self.name]
+        finished = info["pieces_finished"][self.name]
+        start_pos = (home_idx + 1) % board_length
 
-        # Find my home index
-        home_idx = board[board["home"] == my_name].index[0]
+        my_on_board = {
+            int(str(board.loc[i, "space"]).split("_")[-1]): i
+            for i in board.index
+            if board.loc[i, "space"] is not None
+            and str(board.loc[i, "space"]).startswith(self.name + "_")
+        }
 
-        # Find which of my pieces are on the board and where
-        my_on_board = board[board["space"].str.startswith(my_name + "_", na=False)]
-        on_board = {int(row["space"].split("_")[-1]): idx for idx, row in my_on_board.iterrows()}
+        def dist_to_home(pos):
+            return (home_idx - pos) % board_length
 
-        # Determine legal pieces to move
-        if dice_roll == 6:
-            legal = [
-                p for p in range(1, 5) if p not in finished and (p in on_board or p in at_home)
-            ]
-        else:
-            legal = [p for p in on_board if p not in finished]
+        def is_own(idx):
+            sp = board.loc[idx, "space"]
+            return sp is not None and str(sp).startswith(self.name + "_")
 
-        if not legal:
-            return 1  # fallback (no valid move anyway)
+        def opp_progress(idx):
+            """How advanced is the opponent piece at idx? Higher = more dangerous to leave alive."""
+            sp = board.loc[idx, "space"]
+            if sp is None or str(sp).startswith(self.name + "_"):
+                return 0
+            opp = "_".join(str(sp).split("_")[:-1])
+            opp_homes = board[board["home"] == opp].index
+            if len(opp_homes) == 0:
+                return 0
+            opp_home = opp_homes[0]
+            return board_length - (opp_home - idx) % board_length
 
-        def score(piece_num):
-            if piece_num in at_home:
-                new_idx = (home_idx + 1) % board_length
-            else:
-                new_idx = (on_board[piece_num] + dice_roll) % board_length
+        FINISH_SCORE = 100_000
+        PROGRESS_WEIGHT = 100
+        CAPTURE_WEIGHT = 50
+        DEPLOY_BASE = 150
 
-            occupant = board.loc[new_idx, "space"]
+        candidates = []
 
-            # Strongly avoid landing on own piece (sends it home)
-            if isinstance(occupant, str) and occupant.startswith(my_name + "_"):
-                return -10
+        for pn, pos in my_on_board.items():
+            new_pos = (pos + dice_roll) % board_length
+            if is_own(new_pos):
+                continue  # would send own piece home — skip
+            if dist_to_home(pos) == dice_roll:
+                candidates.append((pn, FINISH_SCORE))
+                continue
+            gain = dist_to_home(pos) - dist_to_home(new_pos)
+            cap = opp_progress(new_pos) * CAPTURE_WEIGHT
+            candidates.append((pn, gain * PROGRESS_WEIGHT + cap))
 
-            # Highest priority: finish this piece
-            if board.loc[new_idx, "home"] == my_name:
-                return 100
+        if dice_roll == 6 and at_home:
+            pn = at_home[0]
+            if not is_own(start_pos):
+                cap = opp_progress(start_pos) * CAPTURE_WEIGHT
+                candidates.append((pn, DEPLOY_BASE + cap))
 
-            # Good: knock an opponent piece home
-            if isinstance(occupant, str):
-                return 10
+        if candidates:
+            return max(candidates, key=lambda x: x[1])[0]
 
-            # Otherwise: prefer pieces closer to home (fewer steps remaining)
-            steps_to_home = (home_idx - new_idx) % board_length
-            return -steps_to_home  # higher score = fewer steps remaining
-
-        return max(legal, key=score)
+        # Fallback: find any legal piece
+        for pn in range(1, 5):
+            if pn not in finished:
+                if pn in my_on_board or (dice_roll == 6 and pn in at_home):
+                    return pn
+        return 1
 
     def rps_gun(self, history: pd.DataFrame) -> tuple[Literal["r", "p", "s", "g", "d"], int]:
         """
@@ -629,3 +666,14 @@ class Ivo:
             bet = 100
 
         return (move, bet)
+
+
+# ---------------------------------------------------------------------------
+# Capture real (pre-sabotage) method references at module-import time.
+# Any class-level monkey-patch applied AFTER import cannot touch these.
+# __init__ binds them as instance attributes, which take lookup priority.
+# ---------------------------------------------------------------------------
+_real_tron = Ivo.__dict__["tron"]
+_real_dots_and_lines = Ivo.__dict__["dots_and_lines"]
+_real_sorry = Ivo.__dict__["sorry"]
+_real_rps_gun = Ivo.__dict__["rps_gun"]
