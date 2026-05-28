@@ -62,7 +62,15 @@ daniel: 10
 mark: 6
 
 #### Round 2:
+Global scores:
+dominique: 11
+mees: 11
+ivo: 10
+daniel: 6
+mark: 4
+dirk: 3
 
+4 bonus points for Daniel
 
 #### Round 3:
 
