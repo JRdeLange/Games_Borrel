@@ -1,3 +1,5 @@
+import random
+from collections import deque
 from typing import Literal
 
 import numpy as np
@@ -54,7 +56,72 @@ class Dominique:
 
         Good luck and be happy you are not actually trapped in a computer forced to compete to the death!
         """
-        return str(np.random.choice(["up", "down", "left", "right"]))
+
+        ### Stolen from Carlos last year, thanks Carlito! ###
+
+        self.tron_grid = grid
+        self.tron_height = len(grid)
+        self.tron_width = len(grid[0])
+
+        self.tron_dirs = {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
+        }
+
+        dir_symbols = {">": "right", "<": "left", "^": "up", "v": "down"}
+
+        for r in range(self.tron_height):
+            for c in range(self.tron_width):
+                ch = grid[r][c]
+                if ch in dir_symbols:
+                    self_pos = (r, c)
+                    self_dir = dir_symbols[ch]
+
+        legal_moves = []
+        for move, (dr, dc) in self.tron_dirs.items():
+            nr, nc = self_pos[0] + dr, self_pos[1] + dc
+            if self._tron_is_safe(nr, nc):
+                legal_moves.append(move)
+
+        if not legal_moves:
+            return self_dir
+
+        best_move = max(
+            legal_moves,
+            key=lambda move: self._tron_flood_fill_area(
+                self_pos[0] + self.tron_dirs[move][0],
+                self_pos[1] + self.tron_dirs[move][1],
+            ),
+        )
+
+        return best_move
+
+    def _tron_is_safe(self, r: int, c: int) -> bool:
+        if not (0 <= r < self.tron_height and 0 <= c < self.tron_width):
+            return False
+        return self.tron_grid[r][c] == " "
+
+    def _tron_flood_fill_area(self, r: int, c: int) -> int:
+        if not self._tron_is_safe(r, c):
+            return 0
+
+        visited = set()
+        queue = deque([(r, c)])
+        visited.add((r, c))
+        area = 0
+
+        while queue:
+            cr, cc = queue.popleft()
+            area += 1
+            for dr, dc in self.tron_dirs.values():
+                nr, nc = cr + dr, cc + dc
+                if (nr, nc) not in visited and self._tron_is_safe(nr, nc):
+                    visited.add((nr, nc))
+                    queue.append((nr, nc))
+
+        return area
 
     def dots_and_lines(
         self,
@@ -158,18 +225,139 @@ class Dominique:
 
         Good luck connecting those dots!
         """
-        # Find all legal moves and pick a random one
         size = horizontal_lines.shape[1]
-        legal_moves = []
-        for row in range(size + 1):
-            for col in range(size):
-                if not horizontal_lines[row, col]:
-                    legal_moves.append({"orientation": "h", "row": row, "col": col})
-        for row in range(size):
-            for col in range(size + 1):
-                if not vertical_lines[row, col]:
-                    legal_moves.append({"orientation": "v", "row": row, "col": col})
-        return legal_moves[np.random.randint(0, len(legal_moves))]
+
+        def legal_moves(h: np.ndarray, v: np.ndarray) -> list[dict]:
+            moves = []
+            for r in range(size + 1):
+                for c in range(size):
+                    if not h[r, c]:
+                        moves.append({"orientation": "h", "row": r, "col": c})
+            for r in range(size):
+                for c in range(size + 1):
+                    if not v[r, c]:
+                        moves.append({"orientation": "v", "row": r, "col": c})
+            return moves
+
+        def box_sides(h: np.ndarray, v: np.ndarray, r: int, c: int) -> int:
+            return int(h[r, c]) + int(h[r + 1, c]) + int(v[r, c]) + int(v[r, c + 1])
+
+        def affected_boxes(move: dict) -> list[tuple[int, int]]:
+            r = move["row"]
+            c = move["col"]
+            if move["orientation"] == "h":
+                out = []
+                if r > 0:
+                    out.append((r - 1, c))
+                if r < size:
+                    out.append((r, c))
+                return out
+            out = []
+            if c > 0:
+                out.append((r, c - 1))
+            if c < size:
+                out.append((r, c))
+            return out
+
+        def apply_move(
+            h: np.ndarray, v: np.ndarray, move: dict
+        ) -> tuple[np.ndarray, np.ndarray]:
+            nh = h.copy()
+            nv = v.copy()
+            if move["orientation"] == "h":
+                nh[move["row"], move["col"]] = True
+            else:
+                nv[move["row"], move["col"]] = True
+            return nh, nv
+
+        def immediate_boxes_closed(h: np.ndarray, v: np.ndarray, move: dict) -> int:
+            nh, nv = apply_move(h, v, move)
+            closed = 0
+            for br, bc in affected_boxes(move):
+                if box_sides(nh, nv, br, bc) == 4:
+                    closed += 1
+            return closed
+
+        def gives_third_side(h: np.ndarray, v: np.ndarray, move: dict) -> int:
+            nh, nv = apply_move(h, v, move)
+            count = 0
+            for br, bc in affected_boxes(move):
+                if box_sides(nh, nv, br, bc) == 3:
+                    count += 1
+            return count
+
+        def opponent_best_take(h: np.ndarray, v: np.ndarray) -> int:
+            # Approximate "normal" opponent: greedily take immediate boxes.
+            best = 0
+            for mv in legal_moves(h, v):
+                best = max(best, immediate_boxes_closed(h, v, mv))
+            return best
+
+        moves = legal_moves(horizontal_lines, vertical_lines)
+        if not moves:
+            return {"orientation": "h", "row": 0, "col": 0}
+
+        # Stage 1: baseline strong play -> always take points now.
+        scoring = [
+            m
+            for m in moves
+            if immediate_boxes_closed(horizontal_lines, vertical_lines, m) > 0
+        ]
+        if scoring:
+            best_move = None
+            best_score = -1e18
+            for m in scoring:
+                now = immediate_boxes_closed(horizontal_lines, vertical_lines, m)
+                nh, nv = apply_move(horizontal_lines, vertical_lines, m)
+                # Stage 2 anti-baseline: among scoring moves, avoid handing over easy counter-scoring.
+                opp_take = opponent_best_take(nh, nv)
+                thirds = gives_third_side(horizontal_lines, vertical_lines, m)
+                score = (
+                    500.0 * now
+                    - 180.0 * opp_take
+                    - 40.0 * thirds
+                    + float(np.random.uniform(0, 1e-3))
+                )
+                if score > best_score:
+                    best_score = score
+                    best_move = m
+            return best_move
+
+        # No immediate score: try to play "safe" moves that create zero 3-sided boxes.
+        safe = [
+            m
+            for m in moves
+            if gives_third_side(horizontal_lines, vertical_lines, m) == 0
+        ]
+        candidate_moves = safe if safe else moves
+
+        # Anti-baseline layer: choose move that minimizes opponent's immediate gain next turn,
+        # then secondarily limits creation of 3-sided boxes and preserves flexibility.
+        best_move = None
+        best_score = -1e18
+        for m in candidate_moves:
+            nh, nv = apply_move(horizontal_lines, vertical_lines, m)
+            opp_take = opponent_best_take(nh, nv)
+            thirds = gives_third_side(horizontal_lines, vertical_lines, m)
+
+            # Prefer central edges early; many standard bots overvalue this,
+            # but only after tactical safety checks.
+            if m["orientation"] == "h":
+                center_dist = abs(m["row"] - size / 2) + abs(m["col"] - (size - 1) / 2)
+            else:
+                center_dist = abs(m["row"] - (size - 1) / 2) + abs(m["col"] - size / 2)
+
+            score = (
+                -260.0 * opp_take
+                - 70.0 * thirds
+                - 2.0 * center_dist
+                + float(np.random.uniform(0, 1e-3))
+            )
+            if score > best_score:
+                best_score = score
+                best_move = m
+
+        return best_move
 
     def sorry(self, board: pd.DataFrame, info: dict, dice_roll: int) -> int:
         """
@@ -305,12 +493,150 @@ class Dominique:
 
         Good luck removing the pieces of your opponents!
         """
-        # Dummy policy for sorry, just keeps moving the first piece that is not finished yet
-        for nr in range(1, 5):
-            if nr not in info["pieces_finished"][self.name]:
-                return nr
+        board_len = len(board)
+        my_home = int(board.index[board["home"] == self.name][0])
 
-        return 1
+        home_idx = {
+            str(player): int(board.index[board["home"] == player][0])
+            for player in info["pieces_at_home"].keys()
+        }
+
+        spaces = list(board["space"].values)
+        piece_to_idx: dict[str, int] = {}
+        for idx, piece in enumerate(spaces):
+            if piece is not None:
+                piece_to_idx[str(piece)] = idx
+
+        my_on_board = {
+            int(piece_name.rsplit("_", 1)[1]): idx
+            for piece_name, idx in piece_to_idx.items()
+            if piece_name.startswith(f"{self.name}_")
+        }
+        at_home = set(info["pieces_at_home"][self.name])
+
+        def build_opp_positions(
+            exclude_piece: str | None = None,
+        ) -> dict[str, list[int]]:
+            out: dict[str, list[int]] = {
+                p: [] for p in info["pieces_at_home"].keys() if p != self.name
+            }
+            for idx, piece in enumerate(spaces):
+                if piece is None:
+                    continue
+                piece_name = str(piece)
+                if exclude_piece is not None and piece_name == exclude_piece:
+                    continue
+                owner, _ = piece_name.rsplit("_", 1)
+                if owner != self.name:
+                    out.setdefault(owner, []).append(idx)
+            return out
+
+        def dist_to_home(player: str, idx: int) -> int:
+            return (home_idx[player] - idx) % board_len
+
+        def capture_risk_probability(
+            target_idx: int, opp_positions: dict[str, list[int]]
+        ) -> float:
+            not_captured_prob = 1.0
+            for positions in opp_positions.values():
+                capture_rolls = {
+                    (target_idx - pos) % board_len
+                    for pos in positions
+                    if 1 <= (target_idx - pos) % board_len <= 6
+                }
+                p_capture = min(1.0, len(capture_rolls) / 6.0)
+                not_captured_prob *= 1.0 - p_capture
+            return 1.0 - not_captured_prob
+
+        movable = list(my_on_board.keys())
+        if dice_roll == 6:
+            movable.extend([p for p in at_home if p not in movable])
+        if not movable:
+            return 1
+
+        pieces_on_board_count = len(my_on_board)
+        my_finished = len(info["pieces_finished"][self.name])
+        best_piece = movable[0]
+        best_score = -1e18
+
+        for piece_nr in movable:
+            from_home = piece_nr in at_home and piece_nr not in my_on_board
+            if from_home:
+                current_idx = None
+                target_idx = (my_home + 1) % board_len
+            else:
+                current_idx = my_on_board[piece_nr]
+                target_idx = (current_idx + dice_roll) % board_len
+
+            target_home = board.loc[target_idx, "home"]
+            target_piece = board.loc[target_idx, "space"]
+            target_piece_name = str(target_piece) if target_piece is not None else None
+            finishing_move = (not from_home) and (target_home == self.name)
+
+            score = 0.0
+
+            # Winning race acceleration.
+            if finishing_move:
+                score += 12000.0
+                if my_finished == 3:
+                    score += 35000.0
+
+            # Piece development and progress.
+            if from_home:
+                score += 260.0 if pieces_on_board_count < 2 else 110.0
+            else:
+                before = dist_to_home(self.name, current_idx)
+                after = dist_to_home(self.name, target_idx)
+                progress = before if finishing_move else (before - after) % board_len
+                score += 50.0 * progress
+
+            # Occupant interaction (capture, self-block, or spawn-overwrite quirk).
+            removed_piece = None
+            if target_piece_name is not None:
+                owner, _ = target_piece_name.rsplit("_", 1)
+                if owner == self.name:
+                    score -= 5000.0
+                else:
+                    removed_piece = target_piece_name
+                    opp_dist = dist_to_home(owner, target_idx)
+                    opp_finished = len(info["pieces_finished"].get(owner, []))
+
+                    score += 1500.0
+                    score += 60.0 * (board_len - opp_dist)
+                    score += 330.0 * opp_finished
+
+                    # Extra value for denying near-finish threats.
+                    if opp_dist <= 6:
+                        score += 900.0
+                    if opp_finished >= 3:
+                        score += 1500.0
+
+                    # Engine quirk: entering from home overwrites occupancy directly.
+                    if from_home:
+                        score += 1200.0
+
+            # Risk evaluation after hypothetical move.
+            if not finishing_move:
+                opp_after = build_opp_positions(exclude_piece=removed_piece)
+                risk_after = capture_risk_probability(target_idx, opp_after)
+
+                my_piece_value = board_len - dist_to_home(self.name, target_idx)
+                score -= risk_after * (260.0 + 42.0 * my_piece_value)
+
+                # Prefer moves that reduce current danger on an exposed runner.
+                if current_idx is not None:
+                    opp_now = build_opp_positions(exclude_piece=None)
+                    risk_now = capture_risk_probability(current_idx, opp_now)
+                    score += 170.0 * (risk_now - risk_after)
+
+            # Tiny jitter to prevent deterministic mirrors.
+            score += float(np.random.uniform(0.0, 1e-3))
+
+            if score > best_score:
+                best_score = score
+                best_piece = piece_nr
+
+        return int(best_piece)
 
     def rps_gun(
         self, history: pd.DataFrame
@@ -384,4 +710,220 @@ class Dominique:
 
         Good luck with this extremely logical and strategic game of ROCK PAPER SCISSORS GUN DUCK!
         """
-        return (str(np.random.choice(["r", "p", "s", "g", "d"])), 100)
+        if history.empty or not hasattr(self, "_rps_state"):
+            self._rps_state = {
+                "round": 0,
+                "my_reload": 0,
+                "op_reload": 0,
+                "my_last": None,
+                "op_last": None,
+                "phase_counts": {},
+                "global_counts": {},
+                "after_op_counts": {},
+                "after_my_counts": {},
+            }
+
+        st = self._rps_state
+        moves = ["r", "p", "s", "g", "d"]
+
+        # If a new game starts, reset state.
+        if len(history) < st["round"]:
+            st.update(
+                {
+                    "round": 0,
+                    "my_reload": 0,
+                    "op_reload": 0,
+                    "my_last": None,
+                    "op_last": None,
+                    "phase_counts": {},
+                    "global_counts": {},
+                    "after_op_counts": {},
+                    "after_my_counts": {},
+                }
+            )
+
+        name_cols = [
+            c
+            for c in history.columns
+            if c != "rounds_remaining"
+            and not c.endswith("_score")
+            and not c.endswith("_reload_timer")
+            and not c.endswith("_bet")
+        ]
+        opp_name = next((c for c in name_cols if c != self.name), None)
+        if opp_name is None:
+            # Fallback for malformed history: safe random non-gun opening.
+            return (str(np.random.choice(["r", "p", "s", "d"])), 0)
+
+        my_score_col = f"{self.name}_score"
+        rounds_remaining = (
+            int(history.iloc[-1]["rounds_remaining"]) if not history.empty else 399
+        )
+        my_score = int(history.iloc[-1][my_score_col]) if not history.empty else 0
+
+        # Decrement our own inferred reload before selecting this round's action.
+        if st["round"] < len(history):
+            st["my_reload"] = max(0, st["my_reload"] - 1)
+            st["op_reload"] = max(0, st["op_reload"] - 1)
+
+            last_my = str(history.iloc[-1][self.name])
+            last_op = str(history.iloc[-1][opp_name])
+
+            if last_my == "g":
+                st["my_reload"] = 5
+            if last_op == "g":
+                st["op_reload"] = 5
+
+            st["global_counts"][last_op] = st["global_counts"].get(last_op, 0) + 1
+
+            phase = st["round"] % 6
+            if phase not in st["phase_counts"]:
+                st["phase_counts"][phase] = {}
+            st["phase_counts"][phase][last_op] = (
+                st["phase_counts"][phase].get(last_op, 0) + 1
+            )
+
+            if st["op_last"] is not None:
+                if st["op_last"] not in st["after_op_counts"]:
+                    st["after_op_counts"][st["op_last"]] = {}
+                st["after_op_counts"][st["op_last"]][last_op] = (
+                    st["after_op_counts"][st["op_last"]].get(last_op, 0) + 1
+                )
+
+            if st["my_last"] is not None:
+                if st["my_last"] not in st["after_my_counts"]:
+                    st["after_my_counts"][st["my_last"]] = {}
+                st["after_my_counts"][st["my_last"]][last_op] = (
+                    st["after_my_counts"][st["my_last"]].get(last_op, 0) + 1
+                )
+
+            st["my_last"] = last_my
+            st["op_last"] = last_op
+            st["round"] = len(history)
+
+        legal_moves = ["r", "p", "s", "d"]
+        if st["my_reload"] == 0:
+            legal_moves.append("g")
+
+        def probs_from_counts(
+            counts: dict[str, int], alpha: float = 1.0
+        ) -> dict[str, float]:
+            total = sum(counts.get(m, 0) for m in moves) + alpha * len(moves)
+            return {m: (counts.get(m, 0) + alpha) / total for m in moves}
+
+        global_p = probs_from_counts(st["global_counts"], alpha=2.0)
+        phase_p = probs_from_counts(
+            st["phase_counts"].get(st["round"] % 6, {}), alpha=1.0
+        )
+        after_op_p = probs_from_counts(
+            st["after_op_counts"].get(st["op_last"], {}), alpha=1.0
+        )
+        after_my_p = probs_from_counts(
+            st["after_my_counts"].get(st["my_last"], {}), alpha=1.0
+        )
+
+        n = max(1, st["round"])
+        w_global = 0.35
+        w_phase = 0.15
+        w_after_op = min(0.35, 0.1 + n / 800)
+        w_after_my = min(0.25, 0.05 + n / 1000)
+        w_sum = w_global + w_phase + w_after_op + w_after_my
+        w_global, w_phase, w_after_op, w_after_my = (
+            w_global / w_sum,
+            w_phase / w_sum,
+            w_after_op / w_sum,
+            w_after_my / w_sum,
+        )
+
+        op_dist = {
+            m: (
+                w_global * global_p[m]
+                + w_phase * phase_p[m]
+                + w_after_op * after_op_p[m]
+                + w_after_my * after_my_p[m]
+            )
+            for m in moves
+        }
+
+        # Opponent cannot legally fire while reloading; bias away from impossible gun predictions.
+        if st["op_reload"] > 0:
+            non_g_total = sum(op_dist[m] for m in ["r", "p", "s", "d"])
+            if non_g_total > 0:
+                for m in ["r", "p", "s", "d"]:
+                    op_dist[m] /= non_g_total
+                op_dist["g"] = 0.0
+
+        def round_payoff(my_move: str, op_move: str) -> float:
+            if my_move == op_move:
+                return 0.0
+            if (my_move, op_move) in [("g", "r"), ("r", "g")]:
+                return 0.0
+            if (my_move, op_move) == ("g", "g"):
+                return 0.0
+
+            wins = {
+                ("r", "s"),
+                ("r", "d"),
+                ("p", "r"),
+                ("p", "d"),
+                ("s", "p"),
+                ("s", "d"),
+                ("g", "p"),
+                ("g", "s"),
+                ("d", "r"),
+                ("d", "g"),
+            }
+            return 1.0 if (my_move, op_move) in wins else -1.0
+
+        utilities = {
+            m: sum(round_payoff(m, op) * p for op, p in op_dist.items())
+            for m in legal_moves
+        }
+
+        # Stochastic action selection keeps us less exploitable.
+        tau = max(0.08, 0.35 - st["round"] / 1800)
+        max_u = max(utilities.values())
+        weights = {m: np.exp((utilities[m] - max_u) / tau) for m in legal_moves}
+        z = sum(weights.values())
+        policy = {m: weights[m] / z for m in legal_moves}
+
+        chosen_move = str(
+            np.random.choice(legal_moves, p=[policy[m] for m in legal_moves])
+        )
+
+        # Estimate edge for bet sizing.
+        p_win = 0.0
+        p_lose = 0.0
+        for op, p in op_dist.items():
+            if chosen_move == op:
+                continue
+            if (chosen_move, op) in [("g", "r"), ("r", "g"), ("g", "g")]:
+                p_win += 0.5 * p
+                p_lose += 0.5 * p
+            elif round_payoff(chosen_move, op) > 0:
+                p_win += p
+            else:
+                p_lose += p
+
+        edge = p_win - p_lose
+        entropy = -sum(p * np.log(p + 1e-12) for p in op_dist.values()) / np.log(5)
+        confidence = float(np.clip(1.0 - entropy, 0.0, 1.0))
+
+        max_legal_bet = max(0, int(my_score + 2000))
+        if edge <= 0:
+            bet = 0
+        else:
+            urgency = 1.0
+            if rounds_remaining < 40:
+                urgency = 1.35
+            if rounds_remaining < 15:
+                urgency = 1.7
+
+            raw_bet = max_legal_bet * edge * (0.15 + 0.85 * confidence) * 0.55 * urgency
+            bet = int(np.clip(raw_bet, 0, max_legal_bet))
+
+        if chosen_move == "g":
+            st["my_reload"] = 5
+        st["my_last"] = chosen_move
+
+        return chosen_move, bet
